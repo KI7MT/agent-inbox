@@ -6,3 +6,5 @@ frontend/dist/
 # wailsjs/ is regenerated at build time by `wails build` / `wails dev`,
 # but we commit a hand-rolled stub so a fresh checkout can `npm run check`
 # (and IDEs can resolve types) without first invoking wails.
+/ui
+agent-inbox-ui
