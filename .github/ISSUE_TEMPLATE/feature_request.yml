@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new capability or an improvement to an existing one
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome — especially with a concrete use case
+        attached. agent-inbox is designed for **single-operator,
+        single-host** workflows; please flag if your need extends beyond
+        that scope so we can discuss the right tool.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the friction or gap you've hit. The "why" matters more than the "what".
+      placeholder: |
+        I run 4 agents on my laptop. When I'm reviewing PRs in another
+        window, I have no signal that an action message is waiting for me
+        until I tab back to the agent's terminal.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed solution
+      description: What you'd like agent-inbox to do. Concrete is good but it doesn't have to be a finished design.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Other approaches you thought about and why they don't fit (or do, partially).
+
+  - type: dropdown
+    id: usage
+    attributes:
+      label: Use-case context
+      description: Roughly where this would be used. Helps weight tradeoffs (e.g., a feature that adds latency is fine for personal use but bad for tight team workflows).
+      options:
+        - Personal dev box
+        - Work / professional dev environment
+        - Both
+        - Team-shared workstation
+        - Other (mention in problem description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mockups, links to related projects, prior art, etc.

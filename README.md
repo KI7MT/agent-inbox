@@ -32,6 +32,26 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io/).
   `urgent` start in `unread` and require the operator to approve. Set
   `AGENT_INBOX_AUTO_APPROVE=1` to skip the gate for solo workflows.
 
+## Project layout
+
+```
+agent-inbox/
+├── src/agent_inbox/          Python MCP server + operator CLI
+│   ├── server.py               FastMCP wiring (9 tools)
+│   ├── core.py                 Plain-function operations (also importable)
+│   ├── cli.py                  `agent-inbox` operator CLI
+│   ├── db.py                   SQLite storage layer (WAL, retry, migration)
+│   └── briefs.py               Brief-driven agent registry
+├── ui/                       Wails v2 desktop app (Go + Svelte 4 + Tailwind)
+│   ├── store.go                SQLite layer mirroring db.py
+│   ├── app.go                  Bound methods exposed to Svelte
+│   └── frontend/               Vite + Svelte components
+├── examples/briefs/          Reference 6-agent set (operator + 5 roles)
+├── bin/                      Cross-platform launcher scripts (POSIX + Windows)
+├── tests/                    159 Python + 7 Go tests, 4-round audit history
+└── pyproject.toml
+```
+
 ## Install
 
 `uv` is the recommended way to manage Python for this project. Install
@@ -229,6 +249,21 @@ OS-specific defaults (resolved by `platformdirs`):
 
 Run `bin/agent-inbox paths` to see the resolved values on your machine.
 
+## Limits
+
+| Field | Cap | Counted as |
+|---|---:|---|
+| Subject (send / reply) | 500 chars | Unicode code points |
+| Body (send / reply) | 1,000,000 chars | Unicode code points |
+| Search subject | 1,000 chars | Unicode code points |
+
+Counts are **Unicode code points**, not grapheme clusters. A ZWJ family
+emoji like `👨‍👩‍👧‍👦` counts as 7 code points; a decomposed accent
+(`é`) counts as 2; the composed form (`é`) counts as 1. The
+Python and Go layers both use code-point counting (Go via
+`utf8.RuneCountInString`) so the boundaries match across CLI, MCP
+server, and desktop UI.
+
 ## Trust model
 
 agent-inbox is designed for **a single trusted operator on one workstation**.
@@ -246,6 +281,11 @@ SQLite file or open the MCP stdio pipe is treated as authorized. That means:
   verification — anything that can talk to the Wails webview can call
   them. That's acceptable here because the webview is owned by the
   operator's own desktop session; the trust boundary is the OS user.
+- The operator name (`AGENT_INBOX_OPERATOR`, default `operator`) is
+  validated at startup against the agent-name regex. Reserved names
+  like `all` are rejected; misconfiguration fails loudly with a clear
+  error rather than producing a quietly-broken install where any agent
+  could send as `all`.
 
 These trade-offs are deliberate: it's a coordination tool for one operator's
 own agents, not a multi-tenant message bus. If you need cross-user or
@@ -267,8 +307,12 @@ serializes writers. The discipline:
 - App-level retry helper (3 retries, exponential backoff) wraps writes for
   the rare cases `busy_timeout` doesn't cover
 
-Tested: 20 threads × 5 writes (100 inserts, no losses) and 5 subprocesses
-× 10 writes (50 inserts via spawn, no losses).
+Tested: 20 threads × 5 writes (100 inserts, no losses) and 5
+subprocesses × 10 writes (50 inserts via spawn, no losses). The
+journal-mode switch from default to WAL (which needs an EXCLUSIVE lock
+that `busy_timeout` doesn't always cover) is wrapped in its own
+retry-on-busy helper so simultaneous fresh processes against a brand-new
+DB don't race the initial setup.
 
 ## Brief file format
 

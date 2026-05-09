@@ -1,0 +1,108 @@
+name: Bug report
+description: Something isn't working the way it's documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The more specific you can be about your
+        environment and the steps to reproduce, the faster this gets fixed.
+
+        **Not for security vulnerabilities** — please use
+        [GitHub Security Advisories](https://github.com/KI7MT/agent-inbox/security/advisories)
+        instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `agent-inbox --version` or the git tag/commit you're on.
+      placeholder: "v0.3.6 (or 48ed398)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+        - Other (mention in description)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      description: Which client is invoking the inbox?
+      multiple: true
+      options:
+        - Claude Code (CLI)
+        - Claude Desktop
+        - OpenAI Codex (CLI)
+        - OpenAI Codex (desktop)
+        - Cursor
+        - Cline
+        - Continue
+        - Zed AI
+        - The `agent-inbox` operator CLI directly
+        - The Wails desktop UI
+        - Custom / other
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python --version`.
+      placeholder: "3.12.5"
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the actual behavior.
+      placeholder: "Sent a message via inbox_send and it returned status='sent', but inbox_check on the recipient came back empty..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Smallest reliable sequence that triggers the bug. Snippets / commands welcome.
+      placeholder: |
+        1. Set `AGENT_INBOX_BRIEFS=/tmp/briefs`
+        2. Drop `alice.md` and `bob.md` in there
+        3. Run `agent-inbox send --from alice --to bob --priority info "test" "body"`
+        4. Run `agent-inbox check --for bob`
+        5. Observed: empty result
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / traceback
+      description: Stack trace, stderr output, or error messages. Paste raw — no need to format.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Other context — non-default config, unusual filesystem (network mount, encrypted), recent OS update, etc.

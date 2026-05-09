@@ -79,6 +79,14 @@ npm run check                  # svelte-check / tsc
 npm run build                  # vite production bundle
 ```
 
+> **Heads up — `go test` requires the embedded frontend bundle.** The
+> `//go:embed all:frontend/dist` directive in `main.go` resolves at
+> compile time, so a clean checkout has nothing to embed until you've
+> built the frontend at least once. Run `cd frontend && npm install &&
+> npm run build` once before `go test ./...`, or use `wails build`
+> which handles both. Subsequent `go test` runs are fast as long as
+> `frontend/dist/` exists.
+
 ## Configuration
 
 The UI honors the same environment variables as the Python side:
