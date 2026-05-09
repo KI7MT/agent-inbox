@@ -162,6 +162,28 @@ def _migrate(conn: sqlite3.Connection) -> None:
         raise
 
 
+@_retry_on_lock
+def _ensure_wal(conn: sqlite3.Connection) -> None:
+    """Switch the database to WAL journal mode if it isn't already.
+
+    journal_mode=WAL is sticky on the file — once any process has set it,
+    every later connection sees WAL on open with no exclusive lock needed.
+    The first process to touch a fresh DB has to grab EXCLUSIVE to do the
+    switch, and that EXCLUSIVE can be contested by other processes opening
+    the file simultaneously. busy_timeout doesn't always cover that case,
+    so we retry. Subsequent calls are cheap no-ops because the check is
+    read-only.
+    """
+    cur = conn.execute("PRAGMA journal_mode").fetchone()
+    if cur and str(cur[0]).lower() == "wal":
+        return
+    result = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    if not result or str(result[0]).lower() != "wal":
+        raise sqlite3.OperationalError(
+            "could not switch to WAL mode (database busy)"
+        )
+
+
 @contextmanager
 def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
     p = path or db_path()
@@ -169,13 +191,13 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(p_str, timeout=BUSY_TIMEOUT_MS / 1000.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     if p_str not in _initialized_paths:
         with _init_lock:
             if p_str not in _initialized_paths:
+                _ensure_wal(conn)
                 conn.executescript(SCHEMA)
                 _migrate(conn)
                 _initialized_paths.add(p_str)
@@ -212,10 +234,21 @@ def insert_message(
 
 
 def list_for_recipient(conn: sqlite3.Connection, recipient: str) -> list[dict[str, Any]]:
+    """Return messages a recipient should act on right now.
+
+    Approval gate: action/urgent messages only become visible to the
+    recipient after the operator has flipped them to `approved`. Until
+    then they live in the operator's pending queue alone. info messages
+    are act-on-immediately so they show up while still unread.
+    """
     rows = conn.execute(
         "SELECT id, timestamp, sender, priority, status, subject, parent_id "
         "FROM messages "
-        "WHERE recipient IN (?, 'all') AND status IN ('unread','approved') "
+        "WHERE recipient IN (?, 'all') "
+        "  AND ( "
+        "    (status = 'unread' AND priority = 'info') "
+        "    OR status = 'approved' "
+        "  ) "
         "ORDER BY created_unix",
         (recipient,),
     ).fetchall()

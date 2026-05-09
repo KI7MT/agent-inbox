@@ -20,7 +20,7 @@ export function SendMessage(
   priority: string,
   subject: string,
   body: string,
-): Promise<string>
+): Promise<main.SendResult>
 export function ReplyMessage(
   from: string,
   inReplyTo: string,

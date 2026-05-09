@@ -84,7 +84,14 @@ def cmd_send(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(f"sent {result['id']}  {result['from']} -> {result['to']}  ({result['initial_state']})")
+    if result["status"] == "no_recipients":
+        print(f"no recipients (no registered agents besides {result['from']})", file=sys.stderr)
+        return 1
+    if result["to"] == "all":
+        targets = result.get("broadcast_to", [])
+        print(f"broadcast {len(result['ids'])} copies  {result['from']} -> {', '.join(targets)}")
+    else:
+        print(f"sent {result['id']}  {result['from']} -> {result['to']}  ({result['initial_state']})")
     return 0
 
 

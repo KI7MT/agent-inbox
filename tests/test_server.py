@@ -38,9 +38,14 @@ def test_send_to_unknown_recipient_rejected(briefs_and_db) -> None:
         core.send("alice", "monty", "info", "hi", "")
 
 
-def test_send_broadcast_allowed(briefs_and_db) -> None:
+def test_send_broadcast_fans_out(briefs_and_db) -> None:
+    """Broadcast becomes one independent message per agent (sender excluded)."""
     sent = core.send("alice", "all", "info", "ping", "")
+    assert sent["status"] == "sent"
     assert sent["to"] == "all"
+    # Two agents in the fixture (alice, bob); alice excluded → 1 target.
+    assert sent["broadcast_to"] == ["bob"]
+    assert len(sent["ids"]) == 1
 
 
 def test_invalid_priority_rejected(briefs_and_db) -> None:

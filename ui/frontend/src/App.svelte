@@ -125,7 +125,11 @@
       if (composeReplyTo && selected) {
         await ReplyMessage(paths.operator, selected.id, e.detail.body, e.detail.priority)
       } else {
-        await SendMessage(paths.operator, e.detail.recipient, e.detail.priority, e.detail.subject, e.detail.body)
+        const result = await SendMessage(paths.operator, e.detail.recipient, e.detail.priority, e.detail.subject, e.detail.body)
+        if (e.detail.recipient === 'all' && result.broadcast_to && result.broadcast_to.length === 0) {
+          composeModal.onError('No recipients to broadcast to (no other registered agents).')
+          return
+        }
       }
       composeModal.onSent()
       toast(`sent to ${e.detail.recipient}`)

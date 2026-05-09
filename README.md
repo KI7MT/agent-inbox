@@ -229,6 +229,24 @@ OS-specific defaults (resolved by `platformdirs`):
 
 Run `bin/agent-inbox paths` to see the resolved values on your machine.
 
+## Trust model
+
+agent-inbox is designed for **a single trusted operator on one workstation**.
+There's no per-agent authentication boundary — any process that can read the
+SQLite file or open the MCP stdio pipe is treated as authorized. That means:
+
+- Any agent can `inbox_send` claiming any `sender` name (no signature, no
+  tokens). The roster is a soft contract enforced by validation, not a
+  security boundary.
+- Any agent can `inbox_read` any message by ID and `inbox_search` across
+  all senders / recipients.
+- Filesystem permissions on the SQLite file (`mode 600` by default on the
+  user's own data dir) are the actual access control.
+
+These trade-offs are deliberate: it's a coordination tool for one operator's
+own agents, not a multi-tenant message bus. If you need cross-user or
+cross-host coordination with real authentication, this is the wrong tool.
+
 ## Concurrency model
 
 Multiple processes — your MCP servers, the CLI, the desktop UI — read and

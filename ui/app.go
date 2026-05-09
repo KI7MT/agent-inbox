@@ -159,26 +159,73 @@ func (a *App) GetMessage(id string) (Message, error) {
 	return m, translateNotFound(err)
 }
 
-// SendMessage sends a new message. The `from` argument lets the operator
-// or a script send as a specific agent (the UI passes operatorName() by
-// default for outgoing operator messages).
-func (a *App) SendMessage(from, to, priority, subject, body string) (string, error) {
+// SendResult is what SendMessage returns. For direct sends, IDs has one
+// element. For broadcasts (to == "all"), IDs has one entry per recipient
+// (the broadcast is fanned out at send time so each recipient has their
+// own row and their own status — no shared global state).
+type SendResult struct {
+	From         string   `json:"from"`
+	To           string   `json:"to"`
+	Priority     string   `json:"priority"`
+	Subject      string   `json:"subject"`
+	IDs          []string `json:"ids"`
+	BroadcastTo  []string `json:"broadcast_to,omitempty"`
+}
+
+// SendMessage sends a new message. Broadcasts (to == "all") fan out into
+// one independent message per registered agent (excluding the sender).
+func (a *App) SendMessage(from, to, priority, subject, body string) (SendResult, error) {
 	if a.store == nil {
-		return "", errors.New("store not initialized")
+		return SendResult{}, errors.New("store not initialized")
 	}
 	from = strings.ToLower(from)
 	to = strings.ToLower(to)
 	priority = strings.ToLower(priority)
 	if !validPriorities[priority] {
-		return "", fmt.Errorf("invalid priority: %q (must be info/action/urgent)", priority)
+		return SendResult{}, fmt.Errorf("invalid priority: %q (must be info/action/urgent)", priority)
 	}
 	if err := validateAgent(from, true /* allowOperator */, false /* allowBroadcast */); err != nil {
-		return "", err
+		return SendResult{}, err
 	}
 	if err := validateAgent(to, true, true); err != nil {
-		return "", err
+		return SendResult{}, err
 	}
-	return a.store.insertMessage(from, to, priority, subject, body, nil)
+
+	if to == "all" {
+		var targets []string
+		for _, n := range loadAgents() {
+			if n != from {
+				targets = append(targets, n)
+			}
+		}
+		if len(targets) == 0 {
+			return SendResult{
+				From: from, To: to, Priority: priority, Subject: subject,
+				BroadcastTo: targets, IDs: nil,
+			}, nil
+		}
+		ids := make([]string, 0, len(targets))
+		for _, target := range targets {
+			id, err := a.store.insertMessage(from, target, priority, subject, body, nil)
+			if err != nil {
+				return SendResult{}, err
+			}
+			ids = append(ids, id)
+		}
+		return SendResult{
+			From: from, To: to, Priority: priority, Subject: subject,
+			BroadcastTo: targets, IDs: ids,
+		}, nil
+	}
+
+	id, err := a.store.insertMessage(from, to, priority, subject, body, nil)
+	if err != nil {
+		return SendResult{}, err
+	}
+	return SendResult{
+		From: from, To: to, Priority: priority, Subject: subject,
+		IDs: []string{id},
+	}, nil
 }
 
 // ReplyMessage replies to a message. The reply goes back to the original

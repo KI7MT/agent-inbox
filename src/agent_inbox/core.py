@@ -85,9 +85,52 @@ def send(
     body: str,
     parent_id: str | None = None,
 ) -> dict[str, Any]:
+    """Send a message. Broadcasts (recipient='all') fan out at send time.
+
+    Fan-out semantics: a broadcast becomes one independent message per
+    registered agent (excluding the sender). Each recipient gets their
+    own row, their own status, their own approval state. This avoids the
+    "one row, global state" trap where one recipient's `mark` mutates
+    every other recipient's view.
+
+    The sender is excluded from the fan-out (you don't deliver your own
+    broadcast back to yourself).
+    """
     s = _validate_agent(sender, "sender")
     r = _validate_agent(recipient, "recipient", allow_broadcast=True)
     p = _validate_priority(priority)
+
+    if r == BROADCAST:
+        targets = sorted(_agents() - {s})
+        if not targets:
+            return {
+                "status": "no_recipients",
+                "from": s,
+                "to": r,
+                "priority": p,
+                "subject": subject,
+                "broadcast_to": [],
+                "ids": [],
+            }
+        ids: list[str] = []
+        initial: str | None = None
+        with db.connect() as conn:
+            for target in targets:
+                msg_id, status = db.insert_message(conn, s, target, p, subject, body, parent_id)
+                ids.append(msg_id)
+                initial = status
+        return {
+            "status": "sent",
+            "from": s,
+            "to": r,
+            "priority": p,
+            "subject": subject,
+            "broadcast_to": targets,
+            "ids": ids,
+            "initial_state": initial,
+            **({"parent_id": parent_id} if parent_id else {}),
+        }
+
     with db.connect() as conn:
         msg_id, status = db.insert_message(conn, s, r, p, subject, body, parent_id)
     return {

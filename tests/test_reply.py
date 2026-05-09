@@ -40,10 +40,16 @@ def test_reply_subject_not_double_prefixed(setup) -> None:
 
 
 def test_reply_to_broadcast_routes_to_original_sender(setup) -> None:
+    """Broadcasts fan out at send time (one row per recipient). A reply
+    goes back to the broadcast sender, regardless of which recipient's
+    copy is being replied to."""
     sent = core.send("alice", "all", "info", "ping", "")
-    reply = core.reply("bob", sent["id"], "pong")
+    # 3 agents in the fixture (alice/bob/carol); alice excluded → bob, carol
+    assert sent["broadcast_to"] == ["bob", "carol"]
+    bob_copy, carol_copy = sent["ids"]
+    reply = core.reply("bob", bob_copy, "pong")
     assert reply["to"] == "alice"
-    reply2 = core.reply("carol", sent["id"], "also pong")
+    reply2 = core.reply("carol", carol_copy, "also pong")
     assert reply2["to"] == "alice"
 
 

@@ -65,9 +65,11 @@ func newStore(path string) (*store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
+	// Ordering note: busy_timeout is set first so the journal_mode=WAL
+	// switch (which needs an EXCLUSIVE lock) respects it under contention.
 	dsn := fmt.Sprintf(
-		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)"+
-			"&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)",
+		"file:%s?_pragma=busy_timeout(%d)&_pragma=synchronous(NORMAL)"+
+			"&_pragma=foreign_keys(ON)",
 		path, busyTimeoutMs,
 	)
 	db, err := sql.Open("sqlite", dsn)
@@ -80,10 +82,40 @@ func newStore(path string) (*store, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
-	return &store{
+	s := &store{
 		db:          db,
 		autoApprove: os.Getenv("AGENT_INBOX_AUTO_APPROVE") == "1",
-	}, nil
+	}
+	if err := s.ensureWAL(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("ensure WAL: %w", err)
+	}
+	return s, nil
+}
+
+// ensureWAL switches the DB to WAL journal mode if it isn't already.
+// Sticky cross-process; only the first process touching a fresh DB has
+// to take the EXCLUSIVE lock to do the switch, and that can be contested
+// by other processes opening simultaneously. The retry covers that case.
+func (s *store) ensureWAL() error {
+	var mode string
+	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil {
+		return fmt.Errorf("read journal_mode: %w", err)
+	}
+	if strings.EqualFold(mode, "wal") {
+		return nil
+	}
+	_, err := withRetry(func() (string, error) {
+		var got string
+		if e := s.db.QueryRow("PRAGMA journal_mode=WAL").Scan(&got); e != nil {
+			return got, e
+		}
+		if !strings.EqualFold(got, "wal") {
+			return got, fmt.Errorf("WAL switch did not take effect (got %q, busy)", got)
+		}
+		return got, nil
+	})
+	return err
 }
 
 // ensureSchema runs CREATE TABLE IF NOT EXISTS once per process. The
@@ -168,8 +200,12 @@ func scanMessage(row interface {
 
 const messageColumns = `id, timestamp, created_unix, sender, recipient, priority, status, subject, body, parent_id`
 
-// listForRecipient returns unread + approved messages for the recipient
-// or broadcasts.
+// listForRecipient returns the messages a recipient should act on now.
+//
+// Approval gate: action/urgent messages stay invisible to the recipient
+// until the operator approves them (status flips from 'unread' to
+// 'approved'). info messages are act-on-immediately and appear while
+// still 'unread'. This mirrors src/agent_inbox/db.py:list_for_recipient.
 func (s *store) listForRecipient(recipient string) ([]Message, error) {
 	if err := s.ensureSchema(); err != nil {
 		return nil, err
@@ -178,7 +214,10 @@ func (s *store) listForRecipient(recipient string) ([]Message, error) {
 		`SELECT `+messageColumns+
 			` FROM messages
               WHERE recipient IN (?, 'all')
-                AND status IN ('unread','approved')
+                AND (
+                  (status = 'unread' AND priority = 'info')
+                  OR status = 'approved'
+                )
               ORDER BY created_unix`,
 		recipient,
 	)

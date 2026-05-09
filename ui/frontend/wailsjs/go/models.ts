@@ -76,4 +76,21 @@ export namespace main {
       Object.assign(this, source)
     }
   }
+
+  export class SendResult {
+    from: string = ''
+    to: string = ''
+    priority: string = ''
+    subject: string = ''
+    ids: string[] = []
+    broadcast_to?: string[]
+
+    static createFrom(source: any = {}) { return new SendResult(source) }
+
+    constructor(source: any = {}) {
+      if (typeof source === 'string') source = JSON.parse(source)
+      Object.assign(this, source)
+      if (!this.ids) this.ids = []
+    }
+  }
 }

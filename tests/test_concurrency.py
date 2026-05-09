@@ -98,14 +98,17 @@ def test_reads_dont_block_writes(briefs_and_db: Path) -> None:
     assert reader_iters[0] >= 5, f"reader only completed {reader_iters[0]} cycles"
 
 
-def _process_writer(db_path: str, briefs_dir: str, idx: int, count: int) -> int:
-    """Run in a subprocess — fresh interpreter, no shared sqlite connection."""
+def _process_writer(db_path: str, briefs_dir: str, idx: int, count: int) -> tuple[int, str]:
+    """Run in a subprocess — fresh interpreter, no shared sqlite connection.
+
+    Returns (sent_count, error_message). error_message is empty on success.
+    """
     import os
+    import traceback
 
     os.environ["AGENT_INBOX_DB"] = db_path
     os.environ["AGENT_INBOX_BRIEFS"] = briefs_dir
 
-    # Re-import after env var is set so module-level resolution sees it
     from agent_inbox import core as _core
 
     sent = 0
@@ -113,10 +116,9 @@ def _process_writer(db_path: str, briefs_dir: str, idx: int, count: int) -> int:
         try:
             _core.send("alice", "bob", "info", f"p{idx}-m{n}", "")
             sent += 1
-        except sqlite3.OperationalError as e:
-            # Should not surface — busy_timeout + retries handle it
-            return -1
-    return sent
+        except sqlite3.OperationalError:
+            return sent, traceback.format_exc()
+    return sent, ""
 
 
 def test_concurrent_multiprocess_writers(briefs_and_db: Path) -> None:
@@ -137,7 +139,13 @@ def test_concurrent_multiprocess_writers(briefs_and_db: Path) -> None:
             [(db_path, briefs_dir, i, per_proc) for i in range(procs)],
         )
 
-    assert all(r == per_proc for r in results), f"writes lost or errored: {results}"
+    failures = [(i, sent, err) for i, (sent, err) in enumerate(results) if err]
+    if failures:
+        details = "\n".join(f"proc {i}: sent={sent}, err={err}" for i, sent, err in failures)
+        pytest.fail(f"{len(failures)} subprocess(es) failed:\n{details}")
+
+    sent_counts = [sent for sent, _ in results]
+    assert all(s == per_proc for s in sent_counts), f"counts: {sent_counts}"
 
     result = core.list_recent(limit=500)
     assert result["count"] == procs * per_proc
