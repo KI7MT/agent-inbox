@@ -117,6 +117,29 @@ def inbox_brief(name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def inbox_reply(
+    sender: str,
+    in_reply_to: str,
+    body: str,
+    priority: str = "info",
+) -> dict[str, Any]:
+    """Reply to a message you received.
+
+    The reply goes back to the original sender, threaded via parent_id.
+    Subject is prefixed with 'Re: ' unless it already starts with 're:'.
+    You must have been the original recipient — or the original message
+    must have been a broadcast (`recipient='all'`).
+
+    Args:
+        sender: Your agent name.
+        in_reply_to: ID of the message you're replying to.
+        body: Your reply (markdown supported).
+        priority: 'info' (default), 'action', or 'urgent'.
+    """
+    return core.reply(sender, in_reply_to, body, priority)
+
+
+@mcp.tool()
 def inbox_wait(recipient: str, timeout_seconds: int = 30) -> dict[str, Any]:
     """Block until pending messages exist for the recipient, or timeout.
 

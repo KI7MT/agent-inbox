@@ -173,6 +173,21 @@ def search(
     return [dict(r) for r in rows]
 
 
+def list_pending_approval(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Return action/urgent messages still waiting for operator approval.
+
+    Ordered urgent-first, then action, oldest within each priority.
+    """
+    rows = conn.execute(
+        "SELECT id, timestamp, sender, recipient, priority, status, subject, parent_id "
+        "FROM messages "
+        "WHERE status = 'unread' AND priority IN ('action', 'urgent') "
+        "ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'action' THEN 1 ELSE 2 END, "
+        "         created_unix"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_recent(conn: sqlite3.Connection, limit: int = 50) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, timestamp, sender, recipient, priority, status, subject "

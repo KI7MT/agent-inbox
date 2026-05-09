@@ -202,3 +202,53 @@ def list_recent(limit: int = 50) -> dict[str, Any]:
     with db.connect() as conn:
         rows = db.list_recent(conn, limit)
     return {"count": len(rows), "messages": rows}
+
+
+def list_pending_approval() -> dict[str, Any]:
+    """Operator's approval queue — unread action/urgent messages."""
+    with db.connect() as conn:
+        rows = db.list_pending_approval(conn)
+    return {"count": len(rows), "messages": rows}
+
+
+def reply(
+    sender: str,
+    in_reply_to: str,
+    body: str,
+    priority: str = "info",
+) -> dict[str, Any]:
+    """Reply to a message you received.
+
+    The reply goes back to the original sender, with `parent_id` set to
+    the message being replied to and the subject prefixed with `Re: `
+    (unless it already starts with `re:`). The replier must be the
+    original recipient — or the original message must be a broadcast.
+    """
+    s = _validate_agent(sender, "sender")
+    p = _validate_priority(priority)
+    with db.connect() as conn:
+        parent = db.get_message(conn, in_reply_to)
+        if not parent:
+            return {"error": f"Parent message {in_reply_to} not found."}
+        if parent["recipient"] != s and parent["recipient"] != BROADCAST:
+            raise ValueError(
+                f"Cannot reply: '{s}' was not the recipient of message "
+                f"{in_reply_to} (sent to '{parent['recipient']}')."
+            )
+        recipient = parent["sender"].lower()
+        subject = parent["subject"]
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+        msg_id, status = db.insert_message(
+            conn, s, recipient, p, subject, body, in_reply_to
+        )
+    return {
+        "status": "sent",
+        "id": msg_id,
+        "from": s,
+        "to": recipient,
+        "priority": p,
+        "subject": subject,
+        "initial_state": status,
+        "parent_id": in_reply_to,
+    }

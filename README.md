@@ -6,9 +6,9 @@ Claude Code (CLI and Desktop), OpenAI Codex (CLI and desktop app), Cursor,
 Cline, Continue, Zed AI, and anything else that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io/).
 
-- **MCP server** (Python, FastMCP) — eight tools: `inbox_check`,
-  `inbox_read`, `inbox_send`, `inbox_mark`, `inbox_search`, `inbox_agents`,
-  `inbox_brief`, `inbox_wait`.
+- **MCP server** (Python, FastMCP) — nine tools: `inbox_check`,
+  `inbox_read`, `inbox_send`, `inbox_reply`, `inbox_mark`, `inbox_search`,
+  `inbox_agents`, `inbox_brief`, `inbox_wait`.
 - **Operator CLI** — `agent-inbox` command for the human user. List, read,
   send, approve, reject, watch, manage briefs.
 - **Storage** — a single SQLite file. No database server, no daemon,
@@ -161,9 +161,11 @@ probe for `uv` first and fall back to a `.venv` if present.
    ```bash
    bin/agent-inbox list                     # recent messages
    bin/agent-inbox list --for operator      # pending mail for you
+   bin/agent-inbox pending                  # action/urgent awaiting your approval
    bin/agent-inbox read <id>                # full message
    bin/agent-inbox approve <id>             # approve action/urgent
    bin/agent-inbox reject <id>
+   bin/agent-inbox reply <id> "answer"      # reply to a message
    bin/agent-inbox watch --for operator     # live tail
    bin/agent-inbox send --to architect "subject" "body"
    ```
@@ -177,6 +179,7 @@ probe for `uv` first and fall back to a `.venv` if present.
 | `inbox_check`   | Show unread + approved messages for a recipient              |
 | `inbox_read`    | Fetch a message by ID                                        |
 | `inbox_send`    | Send a message — sender, recipient, priority, subject, body  |
+| `inbox_reply`   | Reply to a message — auto-routes back to original sender     |
 | `inbox_mark`    | Set status to `read`, `in_progress`, or `done`               |
 | `inbox_search`  | Filter by sender / recipient / subject substring + lookback  |
 | `inbox_wait`    | Block until new mail arrives or timeout (long-poll)          |

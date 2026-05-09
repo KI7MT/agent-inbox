@@ -164,6 +164,35 @@ def cmd_paths(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pending(args: argparse.Namespace) -> int:
+    result = core.list_pending_approval()
+    if not result["messages"]:
+        print("(no messages awaiting approval)")
+        return 0
+    print(f"awaiting approval (count={result['count']}):")
+    for m in result["messages"]:
+        _print_message_summary(m)
+    return 0
+
+
+def cmd_reply(args: argparse.Namespace) -> int:
+    sender = args.from_ or briefs.operator_name()
+    body = args.body
+    if body == "-":
+        body = sys.stdin.read()
+    try:
+        result = core.reply(sender, args.id, body, args.priority)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if "error" in result:
+        print(result["error"], file=sys.stderr)
+        return 1
+    parent_short = result["parent_id"][:8]
+    print(f"replied {result['id']}  {result['from']} -> {result['to']}  (re: {parent_short})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="agent-inbox",
@@ -216,6 +245,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     pp = sub.add_parser("paths", help="Print resolved briefs / DB paths")
     pp.set_defaults(func=cmd_paths)
+
+    pq = sub.add_parser("pending", help="List unread action/urgent messages awaiting your approval")
+    pq.set_defaults(func=cmd_pending)
+
+    pe = sub.add_parser("reply", help="Reply to a message")
+    pe.add_argument("id", help="Message ID to reply to")
+    pe.add_argument("body", help="Reply body, or '-' to read from stdin")
+    pe.add_argument("--from", dest="from_", help="Sender (default: operator)")
+    pe.add_argument("--priority", default="info", choices=["info", "action", "urgent"])
+    pe.set_defaults(func=cmd_reply)
 
     return p
 
