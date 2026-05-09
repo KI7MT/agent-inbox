@@ -51,6 +51,12 @@ _initialized_paths: set[str] = set()
 APP_NAME = "agent-inbox"
 
 SCHEMA = """
+-- parent_id is a soft reference, not a true FOREIGN KEY. SQLite cannot
+-- add REFERENCES via ALTER TABLE without recreating the table, and the
+-- application layer (core.reply, App.ReplyMessage) already validates
+-- parent existence before insert. PRAGMA foreign_keys=ON is kept as a
+-- defensive default so that any future genuine FK we add takes effect
+-- immediately, but it is a no-op for parent_id today.
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

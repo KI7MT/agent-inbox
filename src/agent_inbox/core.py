@@ -21,6 +21,10 @@ BROADCAST = "all"
 # pathological agent can't fill the disk by sending huge messages.
 MAX_SUBJECT_LEN = 500
 MAX_BODY_LEN = 1_000_000
+# SQLite's default SQLITE_MAX_LIKE_PATTERN_LENGTH is 50,000 bytes; a search
+# pattern over that limit raises a raw OperationalError. We cap the input
+# well below that so users see a clean ValueError instead of a stack trace.
+MAX_SEARCH_SUBJECT_LEN = 1000
 
 WAIT_POLL_INTERVAL = 1.0
 WAIT_MAX_SECONDS = 300
@@ -32,8 +36,14 @@ def _agents() -> set[str]:
 
 
 def _validate_agent(name: str, field: str, allow_broadcast: bool = False) -> str:
+    """Validate an agent name against the brief-derived registry.
+
+    The operator name is always implicitly registered — fresh installs
+    can have a working CLI / MCP server without an `operator.md` brief
+    file (matches the Go side's `validateAgent(allowOperator=true)`).
+    """
     n = name.lower()
-    valid = _agents()
+    valid = _agents() | {briefs.operator_name()}
     if allow_broadcast:
         valid = valid | {BROADCAST}
     if n not in valid:
@@ -189,6 +199,11 @@ def search(
     days: int = 7,
     limit: int = 20,
 ) -> dict[str, Any]:
+    if len(subject) > MAX_SEARCH_SUBJECT_LEN:
+        raise ValueError(
+            f"Search subject too long: {len(subject)} chars "
+            f"(max {MAX_SEARCH_SUBJECT_LEN})."
+        )
     s = _validate_agent(sender, "sender") if sender else ""
     r = _validate_agent(recipient, "recipient", allow_broadcast=True) if recipient else ""
     with db.connect() as conn:
@@ -287,7 +302,7 @@ def reply(
     """
     s = _validate_agent(sender, "sender")
     p = _validate_priority(priority)
-    _validate_lengths("", body)  # subject inherited from parent, just check body
+    _validate_lengths("", body)
     with db.connect() as conn:
         parent = db.get_message(conn, in_reply_to)
         if not parent:
@@ -298,9 +313,22 @@ def reply(
                 f"{in_reply_to} (sent to '{parent['recipient']}')."
             )
         recipient = parent["sender"].lower()
+        # Orphan-recipient guard: if the original sender's brief has been
+        # removed since the parent was sent, the reply would land in a row
+        # the registry no longer knows about and the recipient could never
+        # `inbox_check` it. Hard-error rather than create an invisible row.
+        if recipient not in _agents() and recipient != briefs.operator_name():
+            raise ValueError(
+                f"Cannot reply: original sender '{recipient}' is no longer "
+                f"in the brief registry. The conversation can't be continued."
+            )
         subject = parent["subject"]
         if not subject.lower().startswith("re:"):
             subject = f"Re: {subject}"
+        # Re-validate length AFTER the "Re: " prefix is added — a parent
+        # subject right at MAX_SUBJECT_LEN would otherwise produce a reply
+        # subject 4 chars over the cap.
+        _validate_lengths(subject, body)
         msg_id, status = db.insert_message(
             conn, s, recipient, p, subject, body, in_reply_to
         )

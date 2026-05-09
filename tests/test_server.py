@@ -85,10 +85,18 @@ def test_search_subject_substring(briefs_and_db) -> None:
     assert result["messages"][0]["subject"] == "release v1"
 
 
-def test_no_briefs_means_no_valid_senders(tmp_path: Path, monkeypatch) -> None:
+def test_no_briefs_only_operator_is_valid(tmp_path: Path, monkeypatch) -> None:
+    """With zero briefs the operator name is still implicitly registered
+    (matches Go side behavior), but every other name is rejected."""
     empty = tmp_path / "empty"
     empty.mkdir()
     monkeypatch.setenv("AGENT_INBOX_BRIEFS", str(empty))
     monkeypatch.setenv("AGENT_INBOX_DB", str(tmp_path / "inbox.db"))
-    with pytest.raises(ValueError, match="no briefs found"):
+
+    # Non-operator names are rejected with operator listed as the only option.
+    with pytest.raises(ValueError, match="Must be one of: operator"):
         core.send("alice", "bob", "info", "", "")
+
+    # Operator can still send to itself (degenerate but valid).
+    sent = core.send("operator", "operator", "info", "self", "")
+    assert sent["status"] == "sent"

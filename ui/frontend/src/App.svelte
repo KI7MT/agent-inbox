@@ -39,6 +39,25 @@
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
+  function startPolling() {
+    if (pollTimer) return
+    pollTimer = setInterval(refreshAll, 2000)
+  }
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+  function onVisibilityChange() {
+    if (document.visibilityState === 'visible') {
+      refreshAll()
+      startPolling()
+    } else {
+      stopPolling()
+    }
+  }
+
   function toast(msg: string) {
     statusMessage = msg
     setTimeout(() => { if (statusMessage === msg) statusMessage = '' }, 3500)
@@ -148,9 +167,15 @@
     } catch (e) {
       toast('connect: ' + e)
     }
-    pollTimer = setInterval(refreshAll, 2000)
+    // Pause polling when the window is hidden / backgrounded — saves
+    // ~1,800 SQLite reads per hour when the operator isn't looking.
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    if (document.visibilityState === 'visible') startPolling()
   })
-  onDestroy(() => { if (pollTimer) clearInterval(pollTimer) })
+  onDestroy(() => {
+    stopPolling()
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+  })
 </script>
 
 <div class="flex flex-col h-full">

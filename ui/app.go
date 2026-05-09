@@ -26,8 +26,9 @@ var validPriorities = map[string]bool{
 
 // Bounds mirror src/agent_inbox/core.py.
 const (
-	maxSubjectLen = 500
-	maxBodyLen    = 1_000_000
+	maxSubjectLen       = 500
+	maxBodyLen          = 1_000_000
+	maxSearchSubjectLen = 1000
 )
 
 func validateLengths(subject, body string) error {
@@ -156,6 +157,12 @@ func (a *App) GetMessages(
 		}
 		return a.store.listForRecipient(strings.ToLower(recipient))
 	case "search":
+		if len(subject) > maxSearchSubjectLen {
+			return nil, fmt.Errorf(
+				"search subject too long: %d chars (max %d)",
+				len(subject), maxSearchSubjectLen,
+			)
+		}
 		return a.store.search(strings.ToLower(sender), strings.ToLower(recipient), subject, days, limit)
 	case "all", "":
 		if limit <= 0 {
@@ -280,11 +287,27 @@ func (a *App) ReplyMessage(from, inReplyTo, body, priority string) (string, erro
 			from, inReplyTo, parent.Recipient,
 		)
 	}
+	dest := strings.ToLower(parent.Sender)
+	// Orphan-recipient guard: if the original sender's brief was removed
+	// since the parent was sent, the reply would land somewhere the
+	// registry no longer knows about. Hard-error rather than create an
+	// invisible row.
+	if err := validateAgent(dest, true /* allowOperator */, false /* allowBroadcast */); err != nil {
+		return "", fmt.Errorf(
+			"cannot reply: original sender %q is no longer in the brief registry: %w",
+			dest, err,
+		)
+	}
 	subject := parent.Subject
 	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
 		subject = "Re: " + subject
 	}
-	return a.store.insertMessage(from, parent.Sender, priority, subject, body, &parent.ID)
+	// Re-check length after the "Re: " prefix is added — same reason as
+	// the Python side.
+	if err := validateLengths(subject, body); err != nil {
+		return "", err
+	}
+	return a.store.insertMessage(from, dest, priority, subject, body, &parent.ID)
 }
 
 // SetStatus assigns an agent-settable status to a message.
