@@ -108,3 +108,26 @@ jobs:
       - name: Run Go tests
         working-directory: ui
         run: go test -v ./...
+
+  # -------------------------------------------------------------------
+  # Aggregator — single status check that turns green only when every
+  # matrix cell above passes. Stable name for branch protection rules
+  # so adding/removing matrix cells later doesn't require updating the
+  # ruleset.
+  # -------------------------------------------------------------------
+  ci-all-green:
+    name: ci-all-green
+    runs-on: ubuntu-latest
+    needs: [python, go-and-frontend]
+    if: always()
+    steps:
+      - name: Verify all matrix cells passed
+        run: |
+          if [ "${{ needs.python.result }}" != "success" ] || \
+             [ "${{ needs.go-and-frontend.result }}" != "success" ]; then
+            echo "One or more matrix cells failed:"
+            echo "  python: ${{ needs.python.result }}"
+            echo "  go-and-frontend: ${{ needs.go-and-frontend.result }}"
+            exit 1
+          fi
+          echo "All matrix cells passed."
