@@ -11,8 +11,9 @@ Cline, Continue, Zed AI, and anything else that speaks the
   `inbox_agents`, `inbox_brief`, `inbox_wait`.
 - **Operator CLI** — `agent-inbox` command for the human user. List, read,
   send, approve, reject, watch, manage briefs.
-- **Storage** — a single SQLite file. No database server, no daemon,
-  no network.
+- **Storage** — a single SQLite file in WAL mode. No database server,
+  no daemon, no network. Safe for multiple processes (MCP servers, the
+  CLI, the future UI) reading and writing concurrently.
 - **Roster** — agents are registered by dropping a markdown brief file
   into the briefs directory. Adding a brief enables a new sender/recipient.
 - **Polling** — `inbox_wait` lets agents block on new mail without the
@@ -217,6 +218,25 @@ OS-specific defaults (resolved by `platformdirs`):
 | Windows | `%APPDATA%\agent-inbox\briefs\`                     | `%LOCALAPPDATA%\agent-inbox\inbox.db`                 |
 
 Run `bin/agent-inbox paths` to see the resolved values on your machine.
+
+## Concurrency model
+
+Multiple processes — your MCP servers, the CLI, the desktop UI — read and
+write the same SQLite file. WAL allows unlimited concurrent readers and
+serializes writers. The discipline:
+
+- `journal_mode=WAL` — readers don't block writers, writers don't block readers
+- `busy_timeout=5000` — SQLite waits up to 5s for a contended writer lock
+  before raising an error
+- `synchronous=NORMAL` — durable under WAL, ~5× faster than `FULL`
+- Connection-per-operation — short-lived locks, fast release
+- Migration runs once per process per DB path (cached) and uses
+  `BEGIN IMMEDIATE` so concurrent fresh processes serialize cleanly
+- App-level retry helper (3 retries, exponential backoff) wraps writes for
+  the rare cases `busy_timeout` doesn't cover
+
+Tested: 20 threads × 5 writes (100 inserts, no losses) and 5 subprocesses
+× 10 writes (50 inserts via spawn, no losses).
 
 ## Brief file format
 

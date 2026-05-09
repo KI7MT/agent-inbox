@@ -3,18 +3,50 @@
 Single file, WAL mode, parameterized queries throughout. Schema is created
 idempotently on first connect; missing columns are added in place so older
 inbox files keep working as the schema evolves.
+
+Concurrency model
+-----------------
+Multiple processes (MCP servers, the UI, the CLI) read and write the same
+SQLite file. WAL allows unlimited concurrent readers; writers serialize
+globally. We rely on:
+
+* `journal_mode=WAL` — readers don't block writers, writers don't block
+  readers
+* `busy_timeout=5000` — SQLite waits up to 5s internally before raising
+  SQLITE_BUSY
+* `synchronous=NORMAL` — durable under WAL, ~5x faster than FULL
+* Connection-per-operation — short-lived locks, fast release
+* `_retry_on_lock` wrapping writes — handles the rare SQLITE_LOCKED that
+  busy_timeout doesn't cover (intra-connection contention, schema races)
 """
 
 from __future__ import annotations
 
 import os
+import random
 import sqlite3
+import threading
+import time
 import uuid
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, TypeVar
 
 from platformdirs import user_data_dir
+
+T = TypeVar("T")
+
+BUSY_TIMEOUT_MS = 5000
+WRITE_RETRY_MAX = 3
+WRITE_RETRY_BASE_DELAY = 0.025
+
+# Per-process schema-init cache. Migration runs once per (process, db_path)
+# so high-concurrency callers don't all funnel through BEGIN IMMEDIATE on
+# every connect(). Cross-process safety is still provided by _migrate's
+# own BEGIN IMMEDIATE + idempotent ALTER guards.
+_init_lock = threading.Lock()
+_initialized_paths: set[str] = set()
 
 APP_NAME = "agent-inbox"
 
@@ -61,36 +93,99 @@ def auto_approve() -> bool:
     return os.environ.get("AGENT_INBOX_AUTO_APPROVE") == "1"
 
 
+def _is_lock_error(exc: BaseException) -> bool:
+    """True if `exc` looks like a SQLite locking conflict worth retrying."""
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    msg = str(exc).lower()
+    return "locked" in msg or "busy" in msg
+
+
+def _retry_on_lock(func: Callable[..., T]) -> Callable[..., T]:
+    """Decorator: retry `func` on SQLITE_LOCKED / SQLITE_BUSY with backoff.
+
+    busy_timeout already handles inter-connection writer contention; this
+    handles the residual intra-connection cases (e.g., a long-running read
+    transaction holds a shared lock when a write tries to upgrade).
+    """
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> T:
+        last_exc: BaseException | None = None
+        for attempt in range(WRITE_RETRY_MAX + 1):
+            try:
+                return func(*args, **kwargs)
+            except sqlite3.OperationalError as exc:
+                if not _is_lock_error(exc):
+                    raise
+                last_exc = exc
+                if attempt == WRITE_RETRY_MAX:
+                    break
+                delay = WRITE_RETRY_BASE_DELAY * (2 ** attempt)
+                delay += random.uniform(0, delay * 0.25)  # jitter
+                time.sleep(delay)
+        assert last_exc is not None
+        raise last_exc
+
+    return wrapper
+
+
+@_retry_on_lock
 def _migrate(conn: sqlite3.Connection) -> None:
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
-    if "parent_id" not in cols:
-        conn.execute("ALTER TABLE messages ADD COLUMN parent_id TEXT")
-    if "created_unix" not in cols:
-        conn.execute("ALTER TABLE messages ADD COLUMN created_unix INTEGER")
-        conn.execute(
-            "UPDATE messages SET created_unix = CAST(strftime('%s', timestamp) AS INTEGER) "
-            "WHERE created_unix IS NULL"
-        )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_created_unix ON messages(created_unix)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_parent_id ON messages(parent_id)")
+    """Idempotent additive migrations.
+
+    Concurrency note: when two fresh processes open the DB simultaneously
+    they would otherwise race — both read `PRAGMA table_info`, both see
+    "column missing", both try `ALTER TABLE ADD COLUMN`, one wins and the
+    other gets a "duplicate column" error that isn't a lock error.
+
+    `BEGIN IMMEDIATE` acquires the writer lock at entry so concurrent
+    migrators serialize. We re-check inside the transaction in case a
+    parallel process won the race and already added the columns.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        if "parent_id" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN parent_id TEXT")
+        if "created_unix" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN created_unix INTEGER")
+            conn.execute(
+                "UPDATE messages SET created_unix = "
+                "CAST(strftime('%s', timestamp) AS INTEGER) WHERE created_unix IS NULL"
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_created_unix ON messages(created_unix)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_parent_id ON messages(parent_id)")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 @contextmanager
 def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
     p = path or db_path()
+    p_str = str(p)
     p.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(p))
+    conn = sqlite3.connect(p_str, timeout=BUSY_TIMEOUT_MS / 1000.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+    if p_str not in _initialized_paths:
+        with _init_lock:
+            if p_str not in _initialized_paths:
+                conn.executescript(SCHEMA)
+                _migrate(conn)
+                _initialized_paths.add(p_str)
     try:
         yield conn
     finally:
         conn.close()
 
 
+@_retry_on_lock
 def insert_message(
     conn: sqlite3.Connection,
     sender: str,
@@ -132,6 +227,7 @@ def get_message(conn: sqlite3.Connection, msg_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+@_retry_on_lock
 def update_status(conn: sqlite3.Connection, msg_id: str, status: str) -> int:
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status: {status!r}")
