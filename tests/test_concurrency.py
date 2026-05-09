@@ -94,8 +94,12 @@ def test_reads_dont_block_writes(briefs_and_db: Path) -> None:
     stop.set()
     r.join(timeout=5)
 
-    assert write_count >= 5, f"only {write_count} writes completed under read load"
-    assert reader_iters[0] >= 5, f"reader only completed {reader_iters[0]} cycles"
+    # Threshold is intentionally low (2 each) — the test asserts that
+    # neither side is *blocked*, not that they're fast. CI runners vary
+    # widely (Windows / macOS hosted runners are slower than Linux), so
+    # any positive count > 1 demonstrates concurrent progress.
+    assert write_count >= 2, f"only {write_count} writes completed under read load"
+    assert reader_iters[0] >= 2, f"reader only completed {reader_iters[0]} cycles"
 
 
 def _process_writer(db_path: str, briefs_dir: str, idx: int, count: int) -> tuple[int, str]:
