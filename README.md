@@ -1,5 +1,10 @@
 # agent-inbox
 
+[![CI](https://github.com/KI7MT/agent-inbox/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KI7MT/agent-inbox/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/KI7MT/agent-inbox?color=blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](pyproject.toml)
+[![Latest release](https://img.shields.io/github/v/release/KI7MT/agent-inbox?include_prereleases&sort=semver)](https://github.com/KI7MT/agent-inbox/releases)
+
 **Problem:** When you run multiple AI coding agents on one workstation —
 say a Claude Code session for architecture, a Codex CLI session for
 implementation, and another for review — they work in isolation. They
