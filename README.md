@@ -1,98 +1,189 @@
 # agent-inbox
 
 A single-host message inbox for coordinating multiple AI coding agents
-running on the same machine. Works with **any MCP-capable client** — Claude
-Code, OpenAI Codex CLI, Cursor, Cline, Continue, Zed AI, and anything else
-that speaks the [Model Context Protocol](https://modelcontextprotocol.io/).
+running on the same machine. Works with **any MCP-capable client** —
+Claude Code (CLI and Desktop), OpenAI Codex (CLI and desktop app), Cursor,
+Cline, Continue, Zed AI, and anything else that speaks the
+[Model Context Protocol](https://modelcontextprotocol.io/).
 
-- **MCP server** (Python, FastMCP) — six tools: `inbox_check`, `inbox_read`,
-  `inbox_send`, `inbox_mark`, `inbox_search`, `inbox_agents`.
-- **Storage** — a single SQLite file in `~/.local/share/agent-inbox/inbox.db`.
-  No database server, no daemon, no network.
-- **Roster** — agents are registered by dropping a markdown brief file into
-  the briefs directory (default `~/.config/agent-inbox/briefs/`). Adding a
-  brief enables a new sender/recipient. Removing one disables it.
-- **Approval gate** (optional) — `info` messages are act-on-immediately;
-  `action` and `urgent` start in `unread` and require a human to flip them
-  to `approved`. Set `AGENT_INBOX_AUTO_APPROVE=1` to skip the gate for
-  single-user setups.
+- **MCP server** (Python, FastMCP) — eight tools: `inbox_check`,
+  `inbox_read`, `inbox_send`, `inbox_mark`, `inbox_search`, `inbox_agents`,
+  `inbox_brief`, `inbox_wait`.
+- **Operator CLI** — `agent-inbox` command for the human user. List, read,
+  send, approve, reject, watch, manage briefs.
+- **Storage** — a single SQLite file. No database server, no daemon,
+  no network.
+- **Roster** — agents are registered by dropping a markdown brief file
+  into the briefs directory. Adding a brief enables a new sender/recipient.
+- **Polling** — `inbox_wait` lets agents block on new mail without the
+  operator prompting them. Works in any MCP client.
+- **Approval gate** — `info` messages act immediately; `action` and
+  `urgent` start in `unread` and require the operator to approve. Set
+  `AGENT_INBOX_AUTO_APPROVE=1` to skip the gate for solo workflows.
 
-The protocol is vendor-neutral — once the server is running, any number of
-agents from any combination of vendors can read and write the same inbox.
-A Claude Code session and a Codex CLI session running side-by-side on the
-same laptop can hand work to each other through it.
+This is a public, single-operator port of an internal multi-host
+implementation. Cross-host inboxes are a different problem (auth,
+transport, replication) — fork it and put a real database behind it.
 
 ## Install
 
-```bash
-pip install agent-inbox-mcp
-```
-
-Or in a uv-managed project:
+`uv` is the recommended way to manage Python for this project. Install
+once if you don't already have it:
 
 ```bash
-uv add agent-inbox-mcp
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-The installed entry point is `agent-inbox-mcp` — that's the command MCP
-clients spawn over stdio.
+Then clone the repo into your workspace:
 
-## Quick start
+```bash
+git clone https://github.com/KI7MT/agent-inbox.git
+cd agent-inbox
+```
 
-1. **Create at least one brief** so the inbox knows who can talk:
-
-   ```bash
-   mkdir -p ~/.config/agent-inbox/briefs
-   cp examples/briefs/reviewer.md ~/.config/agent-inbox/briefs/
-   cp examples/briefs/architect.md ~/.config/agent-inbox/briefs/
-   ```
-
-2. **Wire the MCP server into your client** (see per-client snippets below).
-
-3. **From any agent session**, call `inbox_agents` to see who's registered,
-   `inbox_send` to write a message, and `inbox_check` to read your own.
+That's it — `uv` will sync the venv from `pyproject.toml` automatically
+on first run. No manual `venv` step required.
 
 ## Wiring it up
 
-### Claude Code (`~/.claude.json`)
+MCP clients invoke the server over stdio. **All clients require an
+absolute path** in the `command` field — they do not expand `~` or
+environment variables. Find the absolute path with:
+
+```bash
+# macOS / Linux
+realpath bin/agent-inbox-mcp
+# Windows (PowerShell)
+(Resolve-Path bin\agent-inbox-mcp.cmd).Path
+```
+
+Paste that path into your client's MCP config.
+
+### Recommended: `uv run` (truly OS-agnostic, no launcher script)
+
+Works identically on macOS Intel, macOS Silicon, Linux, and Windows.
+`uv` must be on the client's PATH.
+
+**Claude Code** (`~/.claude.json`):
 
 ```json
 {
   "mcpServers": {
     "inbox": {
       "type": "stdio",
-      "command": "agent-inbox-mcp",
-      "args": [],
-      "env": {}
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/abs/path/to/agent-inbox",
+        "python", "-m", "agent_inbox"
+      ]
     }
   }
 }
 ```
 
-### Codex CLI (`~/.codex/config.toml`)
+**Codex CLI** (`~/.codex/config.toml`):
 
 ```toml
 [mcp_servers.inbox]
-command = "agent-inbox-mcp"
-args = []
+command = "uv"
+args = [
+  "run",
+  "--directory", "/abs/path/to/agent-inbox",
+  "python", "-m", "agent_inbox"
+]
 ```
 
-### Generic stdio MCP client
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`
+on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
-The server reads MCP JSON-RPC on stdin and writes responses on stdout.
-Any client that supports stdio MCP servers will work — point it at the
-`agent-inbox-mcp` executable with no arguments.
+```json
+{
+  "mcpServers": {
+    "inbox": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/abs/path/to/agent-inbox",
+        "python", "-m", "agent_inbox"
+      ]
+    }
+  }
+}
+```
 
-## Tools
+> **macOS GUI app gotcha:** Claude Desktop and Codex desktop app launch
+> with a sparse `PATH` that may not include `uv`. If the desktop client
+> says "command not found", use the launcher-script form below — it
+> resolves `uv` from inside the script after the right shells are sourced.
+
+### Launcher-script form (fallback)
+
+Use these if the client can't find `uv` on its PATH. Both internally
+probe for `uv` first and fall back to a `.venv` if present.
+
+**macOS / Linux** — `bin/agent-inbox-mcp`:
+
+```json
+{
+  "command": "/abs/path/to/agent-inbox/bin/agent-inbox-mcp",
+  "args": []
+}
+```
+
+**Windows** — `bin\agent-inbox-mcp.cmd`:
+
+```json
+{
+  "command": "C:\\abs\\path\\to\\agent-inbox\\bin\\agent-inbox-mcp.cmd",
+  "args": []
+}
+```
+
+## Quick start
+
+1. Copy the example briefs into your briefs directory:
+
+   ```bash
+   bin/agent-inbox paths   # show where briefs go on this OS
+   # then:
+   mkdir -p "<briefs_dir>"
+   cp examples/briefs/*.md "<briefs_dir>/"
+   ```
+
+2. Wire the MCP server into your client (see snippets above).
+
+3. From any agent session, call `inbox_agents` to see who's registered,
+   `inbox_send` to write a message, `inbox_check` to read your own,
+   `inbox_wait` to block until new mail arrives.
+
+4. As the operator, manage the inbox from the terminal:
+
+   ```bash
+   bin/agent-inbox list                     # recent messages
+   bin/agent-inbox list --for operator      # pending mail for you
+   bin/agent-inbox read <id>                # full message
+   bin/agent-inbox approve <id>             # approve action/urgent
+   bin/agent-inbox reject <id>
+   bin/agent-inbox watch --for operator     # live tail
+   bin/agent-inbox send --to architect "subject" "body"
+   ```
+
+## MCP tools
 
 | Tool            | Purpose                                                      |
 | --------------- | ------------------------------------------------------------ |
 | `inbox_agents`  | List registered agents and the briefs directory path         |
+| `inbox_brief`   | Read another agent's brief (their role and conventions)      |
 | `inbox_check`   | Show unread + approved messages for a recipient              |
 | `inbox_read`    | Fetch a message by ID                                        |
 | `inbox_send`    | Send a message — sender, recipient, priority, subject, body  |
 | `inbox_mark`    | Set status to `read`, `in_progress`, or `done`               |
 | `inbox_search`  | Filter by sender / recipient / subject substring + lookback  |
+| `inbox_wait`    | Block until new mail arrives or timeout (long-poll)          |
 
 ## Status flow
 
@@ -104,21 +195,29 @@ Any client that supports stdio MCP servers will work — point it at the
      └──► rejected
 ```
 
-`approved` and `rejected` are reserved for the human reviewer (set them via
-your own UI or by editing the SQLite directly). `AGENT_INBOX_AUTO_APPROVE=1`
-makes new `action` / `urgent` messages start as `approved` automatically —
-use this if you're the only human in the loop.
+`approved` and `rejected` are reserved for the human operator — set them
+via `agent-inbox approve <id>` / `reject <id>`. `AGENT_INBOX_AUTO_APPROVE=1`
+makes new `action`/`urgent` messages start as `approved` automatically —
+use this if you're the only human in the loop and don't want a manual gate.
 
 ## Configuration
 
-| Env var                    | Default                                | Purpose                                  |
-| -------------------------- | -------------------------------------- | ---------------------------------------- |
-| `AGENT_INBOX_BRIEFS`       | `~/.config/agent-inbox/briefs/`        | Directory of agent brief files           |
-| `AGENT_INBOX_DB`           | `~/.local/share/agent-inbox/inbox.db`  | SQLite file path                         |
-| `AGENT_INBOX_AUTO_APPROVE` | unset                                  | Set to `1` to auto-approve action/urgent |
+| Env var                    | Default (varies by OS)                       | Purpose                                  |
+| -------------------------- | -------------------------------------------- | ---------------------------------------- |
+| `AGENT_INBOX_BRIEFS`       | OS user-config dir + `/agent-inbox/briefs/`  | Directory of agent brief files           |
+| `AGENT_INBOX_DB`           | OS user-data dir + `/agent-inbox/inbox.db`   | SQLite file path                         |
+| `AGENT_INBOX_OPERATOR`     | `operator`                                   | Canonical name for the human user        |
+| `AGENT_INBOX_AUTO_APPROVE` | unset                                        | Set to `1` to auto-approve action/urgent |
 
-XDG environment variables (`XDG_CONFIG_HOME`, `XDG_DATA_HOME`) are honored
-when the explicit env vars above are unset.
+OS-specific defaults (resolved by `platformdirs`):
+
+| OS      | Briefs                                              | DB                                                    |
+| ------- | --------------------------------------------------- | ----------------------------------------------------- |
+| Linux   | `~/.config/agent-inbox/briefs/`                     | `~/.local/share/agent-inbox/inbox.db`                 |
+| macOS   | `~/Library/Application Support/agent-inbox/briefs/` | `~/Library/Application Support/agent-inbox/inbox.db`  |
+| Windows | `%APPDATA%\agent-inbox\briefs\`                     | `%LOCALAPPDATA%\agent-inbox\inbox.db`                 |
+
+Run `bin/agent-inbox paths` to see the resolved values on your machine.
 
 ## Brief file format
 
@@ -126,37 +225,38 @@ A brief is plain markdown. The filename (without `.md`) is the canonical
 agent name. Names must match `^[a-z][a-z0-9_-]*$`. The reserved name `all`
 is used for broadcast and cannot be a brief filename.
 
-The contents of the file are advisory — they describe the agent so other
-agents (or you) know what role it plays. The inbox does not parse them.
+The contents are advisory — they describe the agent so other agents (or
+you) know what role it plays. Other agents can fetch a brief via
+`inbox_brief(name)` before deciding to contact it.
 
-Example:
+`examples/briefs/` ships a reference six-agent set covering a typical
+engineering workflow: `operator`, `architect`, `implementer`, `reviewer`,
+`tester`, `ops`.
 
-```markdown
-# Reviewer
+## Polling — how agents stay reactive without prompting
 
-A code-review agent. Reads diffs, looks for security issues, missing tests,
-and inconsistencies with the project's conventions.
-```
+MCP servers can't push, so the agent has to ask. Three patterns, in order
+of preference:
 
-Save that as `~/.config/agent-inbox/briefs/reviewer.md` and `reviewer` is
-now a valid sender and recipient.
+1. **`inbox_wait` long-poll** (universal). Brief instructs: "when idle,
+   call `inbox_wait` for your name." The tool blocks server-side until
+   mail arrives or the timeout elapses (default 30s). Re-call in a loop
+   to keep polling. Works in every MCP client.
 
-## Why a single host?
+2. **Client hooks** (per-client, optional). For clients that support
+   hooks (Claude Code CLI's `SessionStart`/`Stop`), a hook script can
+   call `bin/agent-inbox list --for <name>` and inject the result. Hook
+   bundles ship in a future release.
 
-Cross-machine inboxes are a different problem (auth, transport, replication,
-ordering). This server stays on one host on purpose — the use case is
-multiple agent sessions on a developer's laptop or workstation, not a
-distributed system. If you need multi-host, fork it and put a real database
-behind it.
+3. **`inbox_check` on demand**. Always works as a manual trigger.
 
 ## Development
 
 ```bash
 git clone https://github.com/KI7MT/agent-inbox.git
 cd agent-inbox
-uv venv
-uv pip install -e ".[dev]"
-pytest
+uv sync --all-extras
+uv run pytest
 ```
 
 ## License

@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# agent-inbox operator CLI launcher (POSIX — Linux, macOS Intel & Silicon).
+set -e
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$DIR"
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --quiet python -m agent_inbox.cli "$@"
+elif [ -x ".venv/bin/python" ]; then
+    exec .venv/bin/python -m agent_inbox.cli "$@"
+else
+    echo "agent-inbox: need 'uv' or a .venv at $DIR" >&2
+    exit 1
+fi

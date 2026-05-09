@@ -1,6 +1,6 @@
 [project]
 name = "agent-inbox-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for multi-agent message inbox — SQLite-backed, brief-driven, single-host"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "fastmcp>=2.0",
+    "platformdirs>=4.0",
 ]
 
 [project.urls]
@@ -29,6 +30,7 @@ Issues = "https://github.com/KI7MT/agent-inbox/issues"
 
 [project.scripts]
 agent-inbox-mcp = "agent_inbox.server:main"
+agent-inbox = "agent_inbox.cli:main"
 
 [project.optional-dependencies]
 dev = [

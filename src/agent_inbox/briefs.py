@@ -12,21 +12,30 @@ import os
 import re
 from pathlib import Path
 
+from platformdirs import user_config_dir
+
 NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 RESERVED = {"all"}
+APP_NAME = "agent-inbox"
 
 
 def briefs_dir() -> Path:
     """Resolve the briefs directory.
 
-    Order: `AGENT_INBOX_BRIEFS` env var, then `$XDG_CONFIG_HOME/agent-inbox/briefs`,
-    falling back to `~/.config/agent-inbox/briefs`.
+    Order: `AGENT_INBOX_BRIEFS` env var, then the OS-appropriate user config
+    directory (`~/.config/agent-inbox/briefs/` on Linux,
+    `~/Library/Application Support/agent-inbox/briefs/` on macOS,
+    `%APPDATA%\\agent-inbox\\briefs\\` on Windows).
     """
     custom = os.environ.get("AGENT_INBOX_BRIEFS")
     if custom:
         return Path(custom).expanduser()
-    base = os.environ.get("XDG_CONFIG_HOME") or "~/.config"
-    return Path(base).expanduser() / "agent-inbox" / "briefs"
+    return Path(user_config_dir(APP_NAME)) / "briefs"
+
+
+def operator_name() -> str:
+    """Return the canonical operator name (the human user)."""
+    return os.environ.get("AGENT_INBOX_OPERATOR", "operator").lower()
 
 
 def load_agents(directory: Path | None = None) -> set[str]:

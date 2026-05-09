@@ -1,10 +1,12 @@
 """Plain-function inbox operations — no MCP framework coupling.
 
-`server.py` wraps these as MCP tools. Tests import this module directly.
+`server.py` wraps these as MCP tools. `cli.py` wraps them as a command-line
+interface for the human operator. Tests import this module directly.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from agent_inbox import briefs, db
@@ -13,6 +15,10 @@ VALID_PRIORITIES = {"info", "action", "urgent"}
 AGENT_SETTABLE_STATUSES = {"read", "in_progress", "done"}
 RESERVED_STATUSES = {"approved", "rejected"}
 BROADCAST = "all"
+
+WAIT_POLL_INTERVAL = 1.0
+WAIT_MAX_SECONDS = 300
+WAIT_DEFAULT_SECONDS = 30
 
 
 def _agents() -> set[str]:
@@ -46,6 +52,7 @@ def _validate_priority(priority: str) -> str:
 def list_agents() -> dict[str, Any]:
     return {
         "briefs_dir": str(briefs.briefs_dir()),
+        "operator": briefs.operator_name(),
         "agents": sorted(_agents()),
     }
 
@@ -70,12 +77,19 @@ def read(message_id: str) -> dict[str, Any]:
     return msg if msg else {"error": f"Message {message_id} not found."}
 
 
-def send(sender: str, recipient: str, priority: str, subject: str, body: str) -> dict[str, Any]:
+def send(
+    sender: str,
+    recipient: str,
+    priority: str,
+    subject: str,
+    body: str,
+    parent_id: str | None = None,
+) -> dict[str, Any]:
     s = _validate_agent(sender, "sender")
     r = _validate_agent(recipient, "recipient", allow_broadcast=True)
     p = _validate_priority(priority)
     with db.connect() as conn:
-        msg_id, status = db.insert_message(conn, s, r, p, subject, body)
+        msg_id, status = db.insert_message(conn, s, r, p, subject, body, parent_id)
     return {
         "status": "sent",
         "id": msg_id,
@@ -84,6 +98,7 @@ def send(sender: str, recipient: str, priority: str, subject: str, body: str) ->
         "priority": p,
         "subject": subject,
         "initial_state": status,
+        **({"parent_id": parent_id} if parent_id else {}),
     }
 
 
@@ -91,7 +106,7 @@ def mark(message_id: str, status: str) -> dict[str, Any]:
     s = status.lower()
     if s in RESERVED_STATUSES:
         raise ValueError(
-            f"Status '{s}' is reserved for the human reviewer (set via UI). "
+            f"Status '{s}' is reserved for the human reviewer (set via UI or CLI). "
             f"Agents may use: {', '.join(sorted(AGENT_SETTABLE_STATUSES))}"
         )
     if s not in AGENT_SETTABLE_STATUSES:
@@ -117,4 +132,73 @@ def search(
     r = _validate_agent(recipient, "recipient", allow_broadcast=True) if recipient else ""
     with db.connect() as conn:
         rows = db.search(conn, s, r, subject, days, limit)
+    return {"count": len(rows), "messages": rows}
+
+
+def brief(name: str) -> dict[str, Any]:
+    """Return the markdown brief content for an agent.
+
+    Useful before sending a message to an agent you haven't worked with yet.
+    """
+    n = _validate_agent(name, "agent")
+    content = briefs.read_brief(n)
+    if content is None:
+        return {"error": f"Brief for '{n}' could not be read."}
+    return {"agent": n, "brief": content}
+
+
+def wait(recipient: str, timeout_seconds: int = WAIT_DEFAULT_SECONDS) -> dict[str, Any]:
+    """Block until pending messages exist for `recipient`, or timeout.
+
+    Returns immediately with any unread/approved messages already waiting.
+    Otherwise polls the DB on a short interval until something arrives or
+    the timeout elapses. Designed for agents that should sit idle and react
+    to incoming mail without the operator prompting them.
+    """
+    r = _validate_agent(recipient, "recipient")
+    cap = max(1, min(timeout_seconds, WAIT_MAX_SECONDS))
+    deadline = time.monotonic() + cap
+    while True:
+        with db.connect() as conn:
+            rows = db.list_for_recipient(conn, r)
+        if rows:
+            unread = sum(1 for row in rows if row["status"] == "unread")
+            approved = sum(1 for row in rows if row["status"] == "approved")
+            return {
+                "recipient": r,
+                "timed_out": False,
+                "unread_count": unread,
+                "approved_count": approved,
+                "messages": rows,
+            }
+        if time.monotonic() >= deadline:
+            return {
+                "recipient": r,
+                "timed_out": True,
+                "unread_count": 0,
+                "approved_count": 0,
+                "messages": [],
+            }
+        time.sleep(WAIT_POLL_INTERVAL)
+
+
+def operator_set_status(message_id: str, status: str) -> dict[str, Any]:
+    """Operator-only path for `approved` and `rejected`.
+
+    The MCP-facing `mark()` blocks these statuses so agents cannot self-approve.
+    The operator CLI calls this instead.
+    """
+    s = status.lower()
+    if s not in db.VALID_STATUSES:
+        raise ValueError(f"Invalid status: '{status}'.")
+    with db.connect() as conn:
+        n = db.update_status(conn, message_id, s)
+    if n == 0:
+        return {"error": f"Message {message_id} not found."}
+    return {"status": "updated", "message_id": message_id, "new_status": s}
+
+
+def list_recent(limit: int = 50) -> dict[str, Any]:
+    with db.connect() as conn:
+        rows = db.list_recent(conn, limit)
     return {"count": len(rows), "messages": rows}

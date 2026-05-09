@@ -13,10 +13,10 @@ mcp = FastMCP(
     instructions=(
         "Vendor-neutral message inbox for coordinating AI coding agents on "
         "a single host. SQLite-backed. Agents are registered by placing a "
-        "markdown brief in the briefs directory (default: "
-        "~/.config/agent-inbox/briefs/, override with AGENT_INBOX_BRIEFS). "
-        "Use inbox_check at session start to see unread and approved "
-        "messages. Use inbox_agents to list who you can send to."
+        "markdown brief in the briefs directory (override with "
+        "AGENT_INBOX_BRIEFS). Use inbox_check at session start to see "
+        "pending messages, inbox_wait to block on new mail, and inbox_agents "
+        "to discover who you can send to."
     ),
 )
 
@@ -65,10 +65,10 @@ def inbox_send(
 def inbox_mark(message_id: str, status: str) -> dict[str, Any]:
     """Mark a message as read, in_progress, or done.
 
-    `approved` and `rejected` are reserved for the human reviewer (set via
-    UI or by editing SQLite directly). For single-user setups, set
-    `AGENT_INBOX_AUTO_APPROVE=1` so action/urgent messages start as
-    `approved` automatically.
+    `approved` and `rejected` are reserved for the human operator (set via
+    the agent-inbox CLI or by editing SQLite directly). For single-user
+    setups, set `AGENT_INBOX_AUTO_APPROVE=1` so action/urgent messages
+    start as `approved` automatically.
 
     Args:
         message_id: UUID of the message.
@@ -101,6 +101,35 @@ def inbox_search(
 def inbox_agents() -> dict[str, Any]:
     """List the registered agents and the briefs directory path."""
     return core.list_agents()
+
+
+@mcp.tool()
+def inbox_brief(name: str) -> dict[str, Any]:
+    """Read another agent's brief file.
+
+    Useful before contacting an agent you haven't worked with yet — gives
+    you their role, strengths, and quirks as the operator described them.
+
+    Args:
+        name: Agent name (must match a brief file).
+    """
+    return core.brief(name)
+
+
+@mcp.tool()
+def inbox_wait(recipient: str, timeout_seconds: int = 30) -> dict[str, Any]:
+    """Block until pending messages exist for the recipient, or timeout.
+
+    Returns immediately if there are already unread/approved messages.
+    Otherwise polls until something arrives or the timeout elapses. Use
+    this when you have nothing else to do and want to react to new mail
+    without the operator having to prompt you.
+
+    Args:
+        recipient: Your agent name.
+        timeout_seconds: Max blocking time (default 30, max 300).
+    """
+    return core.wait(recipient, timeout_seconds)
 
 
 def main() -> None:

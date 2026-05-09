@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# agent-inbox MCP server launcher (POSIX — Linux, macOS Intel & Silicon).
+# Probes for uv first; falls back to a colocated .venv.
+set -e
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$DIR"
+if command -v uv >/dev/null 2>&1; then
+    exec uv run --quiet python -m agent_inbox "$@"
+elif [ -x ".venv/bin/python" ]; then
+    exec .venv/bin/python -m agent_inbox "$@"
+else
+    echo "agent-inbox-mcp: need 'uv' (https://docs.astral.sh/uv/) or a .venv at $DIR" >&2
+    echo "  install uv:  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    echo "  or manually: python -m venv .venv && .venv/bin/pip install -e ." >&2
+    exit 1
+fi
