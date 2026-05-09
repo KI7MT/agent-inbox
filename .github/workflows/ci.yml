@@ -12,43 +12,72 @@ concurrency:
   cancel-in-progress: true
 
 # Opt all JavaScript-based actions to the Node 24 runtime ahead of
-# GitHub's 2026-06-02 default flip. Some actions (notably setup-uv@v6
-# as of 2026-05) still embed Node 20 internally; this env var is the
-# documented escape hatch.
+# GitHub's 2026-06-02 default flip. Some actions still embed Node 20
+# internally; this env var is the documented escape hatch.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Force UTF-8 stdio on Windows runners — without this, Python's
+  # default cp1252 codec mangles unicode output from emoji / NFC tests.
+  PYTHONIOENCODING: utf-8
 
 jobs:
-  test:
-    name: tests (ubuntu, py3.12, go1.23, node22)
-    runs-on: ubuntu-latest
-
+  # -------------------------------------------------------------------
+  # Python suite — full multi-version coverage on Linux (cheapest
+  # runner) plus single-Python smoke on macOS and Windows for cross-OS
+  # parity. The combo keeps total runner minutes reasonable while
+  # validating the >=3.10 floor and the per-OS path resolution.
+  # -------------------------------------------------------------------
+  python:
+    name: pytest (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.10"
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: ubuntu-latest
+            python: "3.12"
+          - os: ubuntu-latest
+            python: "3.13"
+          - os: macos-latest
+            python: "3.12"
+          - os: windows-latest
+            python: "3.12"
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      # ---------------------------------------------------------------
-      # Python — uv-managed venv, run pytest
-      # ---------------------------------------------------------------
+      - uses: actions/checkout@v5
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
 
-      - name: Install Python 3.12
-        run: uv python install 3.12
+      - name: Install Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
 
       - name: Sync Python dependencies (frozen against uv.lock)
         run: uv sync --frozen --extra dev
 
-      - name: Run Python tests
+      - name: Run pytest
         run: uv run pytest -v
 
-      # ---------------------------------------------------------------
-      # Frontend — npm install + build (required for the Go side's
-      # //go:embed directive in ui/main.go) + svelte-check
-      # ---------------------------------------------------------------
+  # -------------------------------------------------------------------
+  # Go + frontend suite — runs on all three OSes against Go 1.23 and
+  # Node 22. Frontend build is required first because main.go's
+  # //go:embed all:frontend/dist directive fails to compile if the
+  # directory is missing.
+  # -------------------------------------------------------------------
+  go-and-frontend:
+    name: go + svelte (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Set up Node 22
         uses: actions/setup-node@v5
@@ -69,10 +98,6 @@ jobs:
         working-directory: ui/frontend
         run: npm run build
 
-      # ---------------------------------------------------------------
-      # Go backend — go test (depends on frontend/dist/ existing)
-      # ---------------------------------------------------------------
-
       - name: Set up Go 1.23
         uses: actions/setup-go@v6
         with:
@@ -83,3 +108,26 @@ jobs:
       - name: Run Go tests
         working-directory: ui
         run: go test -v ./...
+
+  # -------------------------------------------------------------------
+  # Aggregator — single status check that turns green only when every
+  # matrix cell above passes. Stable name for branch protection rules
+  # so adding/removing matrix cells later doesn't require updating the
+  # ruleset.
+  # -------------------------------------------------------------------
+  ci-all-green:
+    name: ci-all-green
+    runs-on: ubuntu-latest
+    needs: [python, go-and-frontend]
+    if: always()
+    steps:
+      - name: Verify all matrix cells passed
+        run: |
+          if [ "${{ needs.python.result }}" != "success" ] || \
+             [ "${{ needs.go-and-frontend.result }}" != "success" ]; then
+            echo "One or more matrix cells failed:"
+            echo "  python: ${{ needs.python.result }}"
+            echo "  go-and-frontend: ${{ needs.go-and-frontend.result }}"
+            exit 1
+          fi
+          echo "All matrix cells passed."
