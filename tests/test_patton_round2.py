@@ -115,6 +115,21 @@ def test_operator_name_capitals_lowercased(monkeypatch) -> None:
     assert briefs.operator_name() == "operator"
 
 
+def test_operator_name_rejects_trailing_newline(monkeypatch) -> None:
+    """v0.3.5 fix: Python's `$` accepted a trailing `\\n`, breaking
+    parity with Go and the documented agent-name contract. `\\Z` rejects it."""
+    monkeypatch.setenv("AGENT_INBOX_OPERATOR", "op\n")
+    with pytest.raises(ValueError):
+        briefs.operator_name()
+
+
+def test_operator_name_rejects_trailing_whitespace(monkeypatch) -> None:
+    for bad in ("op\r", "op\t", "op "):
+        monkeypatch.setenv("AGENT_INBOX_OPERATOR", bad)
+        with pytest.raises(ValueError):
+            briefs.operator_name()
+
+
 def test_operator_name_valid_custom_accepted(monkeypatch) -> None:
     for good in ("ki7mt", "alice", "ops-lead", "dev_1"):
         monkeypatch.setenv("AGENT_INBOX_OPERATOR", good)

@@ -35,6 +35,20 @@ def test_load_agents_lowercases_filenames(tmp_path: Path) -> None:
     assert agents == {"alice"}
 
 
+def test_name_regex_uses_strict_end_of_string() -> None:
+    """Python's `$` matches before a final `\\n` by default. We use `\\Z`
+    so a name with a trailing newline is rejected — matches Go's
+    stricter `regexp` and the documented contract."""
+    assert briefs.NAME_RE.match("alice") is not None
+    assert briefs.NAME_RE.match("good-2") is not None
+    # Trailing newline is the bug `\Z` closes.
+    assert briefs.NAME_RE.match("alice\n") is None
+    # Other whitespace chars stay correctly rejected.
+    assert briefs.NAME_RE.match("alice\r") is None
+    assert briefs.NAME_RE.match("alice\t") is None
+    assert briefs.NAME_RE.match("alice ") is None
+
+
 def test_read_brief(tmp_path: Path) -> None:
     (tmp_path / "alice.md").write_text("# Alice\n\nReviews PRs.\n")
     assert briefs.read_brief("alice", tmp_path) == "# Alice\n\nReviews PRs.\n"

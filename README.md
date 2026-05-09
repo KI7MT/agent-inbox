@@ -273,8 +273,9 @@ Tested: 20 threads × 5 writes (100 inserts, no losses) and 5 subprocesses
 ## Brief file format
 
 A brief is plain markdown. The filename (without `.md`) is the canonical
-agent name. Names must match `^[a-z][a-z0-9_-]*$`. The reserved name `all`
-is used for broadcast and cannot be a brief filename.
+agent name. Names must match `^[a-z][a-z0-9_-]*$` against the strict end
+of string — trailing whitespace or newlines are rejected. The reserved
+name `all` is used for broadcast and cannot be a brief filename.
 
 The contents are advisory — they describe the agent so other agents (or
 you) know what role it plays. Other agents can fetch a brief via

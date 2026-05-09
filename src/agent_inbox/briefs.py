@@ -14,7 +14,11 @@ from pathlib import Path
 
 from platformdirs import user_config_dir
 
-NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+# `\Z` (strict end-of-string) instead of `$` because Python's `$` anchor
+# matches before a final `\n` by default — `NAME_RE.match("alice\n")` would
+# return a match with `$`, which violates the documented contract and
+# breaks parity with Go's stricter `regexp` package. `\Z` is unambiguous.
+NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*\Z")
 RESERVED = {"all"}
 APP_NAME = "agent-inbox"
 
