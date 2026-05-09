@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // agentSettableStatuses are the statuses agents may assign via SetStatus.
@@ -24,7 +25,10 @@ var validPriorities = map[string]bool{
 	"urgent": true,
 }
 
-// Bounds mirror src/agent_inbox/core.py.
+// Bounds mirror src/agent_inbox/core.py — character counts in both layers.
+// Go's `len(string)` counts bytes; we use utf8.RuneCountInString for parity
+// with Python's `len(str)` so a 500-emoji subject is treated identically
+// (e.g., 🌪×500 is 500 chars in both, not 500 in Python and 2000 in Go).
 const (
 	maxSubjectLen       = 500
 	maxBodyLen          = 1_000_000
@@ -32,11 +36,11 @@ const (
 )
 
 func validateLengths(subject, body string) error {
-	if len(subject) > maxSubjectLen {
-		return fmt.Errorf("subject too long: %d chars (max %d)", len(subject), maxSubjectLen)
+	if n := utf8.RuneCountInString(subject); n > maxSubjectLen {
+		return fmt.Errorf("subject too long: %d chars (max %d)", n, maxSubjectLen)
 	}
-	if len(body) > maxBodyLen {
-		return fmt.Errorf("body too long: %d chars (max %d)", len(body), maxBodyLen)
+	if n := utf8.RuneCountInString(body); n > maxBodyLen {
+		return fmt.Errorf("body too long: %d chars (max %d)", n, maxBodyLen)
 	}
 	return nil
 }
@@ -157,10 +161,10 @@ func (a *App) GetMessages(
 		}
 		return a.store.listForRecipient(strings.ToLower(recipient))
 	case "search":
-		if len(subject) > maxSearchSubjectLen {
+		if n := utf8.RuneCountInString(subject); n > maxSearchSubjectLen {
 			return nil, fmt.Errorf(
 				"search subject too long: %d chars (max %d)",
-				len(subject), maxSearchSubjectLen,
+				n, maxSearchSubjectLen,
 			)
 		}
 		return a.store.search(strings.ToLower(sender), strings.ToLower(recipient), subject, days, limit)
@@ -218,6 +222,8 @@ func (a *App) SendMessage(from, to, priority, subject, body string) (SendResult,
 		return SendResult{}, err
 	}
 
+	op := operatorName()
+
 	if to == "all" {
 		var targets []string
 		for _, n := range loadAgents() {
@@ -228,23 +234,48 @@ func (a *App) SendMessage(from, to, priority, subject, body string) (SendResult,
 		if len(targets) == 0 {
 			return SendResult{
 				From: from, To: to, Priority: priority, Subject: subject,
-				BroadcastTo: targets, IDs: nil,
+				BroadcastTo: nil, IDs: nil,
 			}, nil
 		}
+		var delivered []string
 		ids := make([]string, 0, len(targets))
 		for _, target := range targets {
+			// Orphan guard: target's brief might have been unlinked
+			// between snapshot and now. Skip rather than write an
+			// unreachable row. Mirrors src/agent_inbox/core.py:send.
+			current := loadAgents()
+			stillRegistered := target == op
+			for _, n := range current {
+				if n == target {
+					stillRegistered = true
+					break
+				}
+			}
+			if !stillRegistered {
+				continue
+			}
 			id, err := a.store.insertMessage(from, target, priority, subject, body, nil)
 			if err != nil {
 				return SendResult{}, err
 			}
 			ids = append(ids, id)
+			delivered = append(delivered, target)
 		}
 		return SendResult{
 			From: from, To: to, Priority: priority, Subject: subject,
-			BroadcastTo: targets, IDs: ids,
+			BroadcastTo: delivered, IDs: ids,
 		}, nil
 	}
 
+	// Direct-send orphan guard: recipient's brief might have been removed
+	// between validation and now. Hard-error rather than write a row the
+	// recipient could never `inbox_check`.
+	if err := validateAgent(to, true /* allowOperator */, false /* allowBroadcast */); err != nil {
+		return SendResult{}, fmt.Errorf(
+			"cannot send: recipient %q is no longer in the brief registry: %w",
+			to, err,
+		)
+	}
 	id, err := a.store.insertMessage(from, to, priority, subject, body, nil)
 	if err != nil {
 		return SendResult{}, err

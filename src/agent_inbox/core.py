@@ -128,6 +128,8 @@ def send(
     p = _validate_priority(priority)
     _validate_lengths(subject, body)
 
+    op = briefs.operator_name()
+
     if r == BROADCAST:
         targets = sorted(_agents() - {s})
         if not targets:
@@ -141,25 +143,48 @@ def send(
                 "ids": [],
             }
         ids: list[str] = []
+        delivered: list[str] = []
+        skipped: list[str] = []
         initial: str | None = None
         with db.connect() as conn:
+            # Orphan guard: a target's brief could be removed between the
+            # snapshot above and any individual insert. Re-check membership
+            # right before each insert and skip orphans rather than write
+            # rows the recipient could never `inbox_check`.
             for target in targets:
+                current = _agents() | {op}
+                if target not in current:
+                    skipped.append(target)
+                    continue
                 msg_id, status = db.insert_message(conn, s, target, p, subject, body, parent_id)
                 ids.append(msg_id)
+                delivered.append(target)
                 initial = status
-        return {
+        result: dict[str, Any] = {
             "status": "sent",
             "from": s,
             "to": r,
             "priority": p,
             "subject": subject,
-            "broadcast_to": targets,
+            "broadcast_to": delivered,
             "ids": ids,
             "initial_state": initial,
-            **({"parent_id": parent_id} if parent_id else {}),
         }
+        if skipped:
+            result["broadcast_skipped"] = skipped
+        if parent_id:
+            result["parent_id"] = parent_id
+        return result
 
     with db.connect() as conn:
+        # Direct-send orphan guard: same TOCTOU as the broadcast loop
+        # above. If the recipient's brief was removed between validation
+        # and now, hard-error rather than create an unreachable row.
+        if r != BROADCAST and r not in (_agents() | {op}):
+            raise ValueError(
+                f"Cannot send: recipient '{r}' is no longer in the brief "
+                f"registry. The message would be unreachable."
+            )
         msg_id, status = db.insert_message(conn, s, r, p, subject, body, parent_id)
     return {
         "status": "sent",

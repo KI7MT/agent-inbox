@@ -34,8 +34,27 @@ def briefs_dir() -> Path:
 
 
 def operator_name() -> str:
-    """Return the canonical operator name (the human user)."""
-    return os.environ.get("AGENT_INBOX_OPERATOR", "operator").lower()
+    """Return the canonical operator name (the human user).
+
+    Validates AGENT_INBOX_OPERATOR against the same constraints as a
+    brief filename: it must match `NAME_RE` and must not collide with a
+    reserved name like `all`. Bad config is rejected loudly here rather
+    than producing a quietly-broken installation (e.g.,
+    `AGENT_INBOX_OPERATOR=all` would otherwise let any agent send as
+    `all` and prevent the operator from receiving direct mail).
+    """
+    raw = os.environ.get("AGENT_INBOX_OPERATOR", "operator").lower()
+    if raw in RESERVED:
+        raise ValueError(
+            f"AGENT_INBOX_OPERATOR cannot be a reserved name "
+            f"(got {raw!r}; reserved: {sorted(RESERVED)})"
+        )
+    if not NAME_RE.match(raw):
+        raise ValueError(
+            f"AGENT_INBOX_OPERATOR={raw!r} doesn't match {NAME_RE.pattern} — "
+            "use lowercase letters/digits/hyphen/underscore, starting with a letter."
+        )
+    return raw
 
 
 def load_agents(directory: Path | None = None) -> set[str]:

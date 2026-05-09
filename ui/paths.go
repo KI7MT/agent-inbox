@@ -67,12 +67,21 @@ func dbPath() string {
 }
 
 // operatorName returns the canonical name for the human user.
+//
+// Panics if AGENT_INBOX_OPERATOR is set to an invalid value (reserved
+// name like "all", or doesn't match nameRE). The check fails loudly at
+// startup instead of producing a quietly-broken install where any agent
+// can send as "all" and the operator can never receive direct mail.
 func operatorName() string {
 	v := os.Getenv("AGENT_INBOX_OPERATOR")
 	if v == "" {
 		return "operator"
 	}
-	return strings.ToLower(v)
+	v = strings.ToLower(v)
+	if err := validateOperatorName(v); err != nil {
+		panic(err)
+	}
+	return v
 }
 
 // expandHome expands a leading ~ or ~/ in p to the user's home directory.

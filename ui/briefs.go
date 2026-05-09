@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +16,26 @@ import (
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 var reservedNames = map[string]bool{"all": true}
+
+// validateOperatorName mirrors briefs.py:operator_name's validation —
+// rejects reserved names like "all" and any name that doesn't match
+// nameRE. Bad config is rejected loudly at startup rather than producing
+// a quietly-broken installation.
+func validateOperatorName(name string) error {
+	if reservedNames[name] {
+		return fmt.Errorf(
+			"AGENT_INBOX_OPERATOR cannot be a reserved name (got %q)", name,
+		)
+	}
+	if !nameRE.MatchString(name) {
+		return fmt.Errorf(
+			"AGENT_INBOX_OPERATOR=%q doesn't match %s — use lowercase "+
+				"letters/digits/hyphen/underscore, starting with a letter",
+			name, nameRE.String(),
+		)
+	}
+	return nil
+}
 
 // loadAgents returns the sorted list of valid agent names found in the
 // briefs directory. Files whose stem doesn't match `nameRE` or matches a
