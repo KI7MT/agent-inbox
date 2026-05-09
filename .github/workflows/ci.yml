@@ -11,6 +11,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Opt all JavaScript-based actions to the Node 24 runtime ahead of
+# GitHub's 2026-06-02 default flip. Some actions (notably setup-uv@v6
+# as of 2026-05) still embed Node 20 internally; this env var is the
+# documented escape hatch.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   test:
     name: tests (ubuntu, py3.12, go1.23, node22)
