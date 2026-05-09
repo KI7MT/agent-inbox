@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, sans-serif;
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+/* Markdown body styling — the message detail panel renders user content */
+.md-body h1 { @apply text-xl font-semibold mt-4 mb-2; }
+.md-body h2 { @apply text-lg font-semibold mt-3 mb-2; }
+.md-body h3 { @apply text-base font-semibold mt-2 mb-1; }
+.md-body p { @apply my-2 leading-relaxed; }
+.md-body ul { @apply list-disc list-inside my-2; }
+.md-body ol { @apply list-decimal list-inside my-2; }
+.md-body code { @apply bg-ink-800 px-1 py-0.5 rounded text-amber-300 text-xs; }
+.md-body pre { @apply bg-ink-800 p-3 rounded my-2 overflow-x-auto text-xs; }
+.md-body pre code { @apply bg-transparent p-0 text-slate-200; }
+.md-body blockquote { @apply border-l-2 border-slate-600 pl-3 my-2 text-slate-400; }
+.md-body table { @apply my-2 text-xs border-collapse; }
+.md-body th, .md-body td { @apply border border-slate-700 px-2 py-1; }
+.md-body th { @apply bg-ink-800 font-semibold; }
+.md-body a { @apply text-sky-400 underline; }

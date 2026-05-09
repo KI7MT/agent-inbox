@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "agent-inbox",
+  "outputfilename": "agent-inbox-ui",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "KI7MT",
+    "email": "ki7mt@yahoo.com"
+  },
+  "info": {
+    "productName": "Agent Inbox",
+    "productVersion": "0.3.0",
+    "copyright": "MIT",
+    "comments": "Local message inbox for coordinating AI coding agents."
+  }
+}
