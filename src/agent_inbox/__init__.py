@@ -1,3 +1,3 @@
 """agent-inbox — MCP server for multi-agent message coordination."""
 
-__version__ = "0.3.6"
+__version__ = "0.3.7"
