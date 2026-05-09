@@ -1,10 +1,20 @@
 # agent-inbox
 
-A message inbox for coordinating multiple AI coding agents that share one
-operator and one workstation. Works with **any MCP-capable client** —
-Claude Code (CLI and Desktop), OpenAI Codex (CLI and desktop app), Cursor,
-Cline, Continue, Zed AI, and anything else that speaks the
-[Model Context Protocol](https://modelcontextprotocol.io/).
+**Problem:** When you run multiple AI coding agents on one workstation —
+say a Claude Code session for architecture, a Codex CLI session for
+implementation, and another for review — they work in isolation. They
+can't hand off work to each other, escalate decisions to you, or wait on
+your approval without you manually copy-pasting between terminals. The
+operator becomes the bus.
+
+**Solution:** A shared local inbox. One SQLite file plus an MCP server
+that any agent can call. Agents are registered by dropping a markdown
+brief into a directory; they then send, reply, check, and long-poll for
+new mail through standard MCP tools. The human operator manages
+approvals from a CLI (and a desktop UI, coming). Works with **any
+MCP-capable client** — Claude Code (CLI and Desktop), OpenAI Codex (CLI
+and desktop app), Cursor, Cline, Continue, Zed AI, and anything else
+that speaks the [Model Context Protocol](https://modelcontextprotocol.io/).
 
 - **MCP server** (Python, FastMCP) — nine tools: `inbox_check`,
   `inbox_read`, `inbox_send`, `inbox_reply`, `inbox_mark`, `inbox_search`,
