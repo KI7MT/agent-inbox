@@ -1,7 +1,7 @@
 # agent-inbox
 
-A single-host message inbox for coordinating multiple AI coding agents
-running on the same machine. Works with **any MCP-capable client** —
+A message inbox for coordinating multiple AI coding agents that share one
+operator and one workstation. Works with **any MCP-capable client** —
 Claude Code (CLI and Desktop), OpenAI Codex (CLI and desktop app), Cursor,
 Cline, Continue, Zed AI, and anything else that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -20,10 +20,6 @@ Cline, Continue, Zed AI, and anything else that speaks the
 - **Approval gate** — `info` messages act immediately; `action` and
   `urgent` start in `unread` and require the operator to approve. Set
   `AGENT_INBOX_AUTO_APPROVE=1` to skip the gate for solo workflows.
-
-This is a public, single-operator port of an internal multi-host
-implementation. Cross-host inboxes are a different problem (auth,
-transport, replication) — fork it and put a real database behind it.
 
 ## Install
 

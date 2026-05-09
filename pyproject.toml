@@ -1,7 +1,7 @@
 [project]
 name = "agent-inbox-mcp"
-version = "0.2.0"
-description = "MCP server for multi-agent message inbox — SQLite-backed, brief-driven, single-host"
+version = "0.2.1"
+description = "MCP server for a multi-agent message inbox — SQLite-backed, brief-driven, vendor-neutral"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Greg Beam, KI7MT", email = "ki7mt@yahoo.com"}]

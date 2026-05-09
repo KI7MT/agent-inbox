@@ -11,12 +11,12 @@ from agent_inbox import core
 mcp = FastMCP(
     "agent-inbox",
     instructions=(
-        "Vendor-neutral message inbox for coordinating AI coding agents on "
-        "a single host. SQLite-backed. Agents are registered by placing a "
-        "markdown brief in the briefs directory (override with "
-        "AGENT_INBOX_BRIEFS). Use inbox_check at session start to see "
-        "pending messages, inbox_wait to block on new mail, and inbox_agents "
-        "to discover who you can send to."
+        "Vendor-neutral message inbox for coordinating AI coding agents. "
+        "SQLite-backed. Agents are registered by placing a markdown brief "
+        "in the briefs directory (override with AGENT_INBOX_BRIEFS). Use "
+        "inbox_check at session start to see pending messages, inbox_wait "
+        "to block on new mail, and inbox_agents to discover who you can "
+        "send to."
     ),
 )
 
