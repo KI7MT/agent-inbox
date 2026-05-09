@@ -293,8 +293,15 @@ func (s *store) search(sender, recipient, subject string, days, limit int) ([]Me
 		args = append(args, recipient)
 	}
 	if subject != "" {
-		conds = append(conds, "subject LIKE ?")
-		args = append(args, "%"+subject+"%")
+		// Escape LIKE-pattern metacharacters so user input matches literally.
+		// Mirrors the Python side's _escape_like + ESCAPE '\' clause.
+		escaped := strings.NewReplacer(
+			`\`, `\\`,
+			`%`, `\%`,
+			`_`, `\_`,
+		).Replace(subject)
+		conds = append(conds, `subject LIKE ? ESCAPE '\'`)
+		args = append(args, "%"+escaped+"%")
 	}
 	q := `SELECT ` + messageColumns + ` FROM messages WHERE ` +
 		strings.Join(conds, " AND ") +

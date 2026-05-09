@@ -13,6 +13,7 @@
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
     "@tsconfig/svelte": "^5.0.4",
     "autoprefixer": "^10.4.21",
+    "dompurify": "^3.2.6",
     "marked": "^11.2.0",
     "postcss": "^8.4.47",
     "svelte": "^4.2.19",

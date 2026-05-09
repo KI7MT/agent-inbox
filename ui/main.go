@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/wailsapp/wails/v2"
@@ -15,9 +14,13 @@ import (
 var assets embed.FS
 
 func main() {
-	app := NewApp()
+	app, err := NewApp()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "agent-inbox-ui:", err)
+		os.Exit(1)
+	}
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:            "Agent Inbox",
 		Width:            1280,
 		Height:           820,
@@ -39,7 +42,3 @@ func main() {
 	}
 }
 
-// stderrWriter is a tiny shim so app.go can log without importing os.
-func stderrWriter() io.Writer {
-	return os.Stderr
-}

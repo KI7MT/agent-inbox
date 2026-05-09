@@ -242,6 +242,10 @@ SQLite file or open the MCP stdio pipe is treated as authorized. That means:
   all senders / recipients.
 - Filesystem permissions on the SQLite file (`mode 600` by default on the
   user's own data dir) are the actual access control.
+- The desktop UI's `Approve` and `Reject` bindings have no caller
+  verification — anything that can talk to the Wails webview can call
+  them. That's acceptable here because the webview is owned by the
+  operator's own desktop session; the trust boundary is the OS user.
 
 These trade-offs are deliberate: it's a coordination tool for one operator's
 own agents, not a multi-tenant message bus. If you need cross-user or

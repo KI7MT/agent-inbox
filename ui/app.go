@@ -24,6 +24,22 @@ var validPriorities = map[string]bool{
 	"urgent": true,
 }
 
+// Bounds mirror src/agent_inbox/core.py.
+const (
+	maxSubjectLen = 500
+	maxBodyLen    = 1_000_000
+)
+
+func validateLengths(subject, body string) error {
+	if len(subject) > maxSubjectLen {
+		return fmt.Errorf("subject too long: %d chars (max %d)", len(subject), maxSubjectLen)
+	}
+	if len(body) > maxBodyLen {
+		return fmt.Errorf("body too long: %d chars (max %d)", len(body), maxBodyLen)
+	}
+	return nil
+}
+
 // Paths is what GetPaths returns — the resolved locations on this OS.
 type Paths struct {
 	BriefsDir string `json:"briefs_dir"`
@@ -44,15 +60,16 @@ type App struct {
 	store *store
 }
 
-// NewApp constructs the App and opens the SQLite store. If the store
-// can't be opened (rare — bad path, permissions), the methods will
-// return errors when called.
-func NewApp() *App {
+// NewApp constructs the App and opens the SQLite store. Fails fast if
+// the store can't be opened — better to crash at startup with a clear
+// reason than to launch a window where every action returns "store not
+// initialized".
+func NewApp() (*App, error) {
 	st, err := newStore(dbPath())
 	if err != nil {
-		fmt.Fprintln(stderrWriter(), "agent-inbox-ui:", err)
+		return nil, fmt.Errorf("open inbox store at %s: %w", dbPath(), err)
 	}
-	return &App{store: st}
+	return &App{store: st}, nil
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -190,6 +207,9 @@ func (a *App) SendMessage(from, to, priority, subject, body string) (SendResult,
 	if err := validateAgent(to, true, true); err != nil {
 		return SendResult{}, err
 	}
+	if err := validateLengths(subject, body); err != nil {
+		return SendResult{}, err
+	}
 
 	if to == "all" {
 		var targets []string
@@ -245,6 +265,9 @@ func (a *App) ReplyMessage(from, inReplyTo, body, priority string) (string, erro
 		return "", fmt.Errorf("invalid priority: %q", priority)
 	}
 	if err := validateAgent(from, true, false); err != nil {
+		return "", err
+	}
+	if err := validateLengths("", body); err != nil {
 		return "", err
 	}
 	parent, err := a.store.getMessage(inReplyTo)

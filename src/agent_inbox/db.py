@@ -272,6 +272,17 @@ def update_status(conn: sqlite3.Connection, msg_id: str, status: str) -> int:
     return cur.rowcount
 
 
+def _escape_like(s: str) -> str:
+    """Escape LIKE-pattern metacharacters so user input matches literally.
+
+    SQLite's LIKE treats `%`, `_`, and the escape char itself as patterns.
+    Without this, searching for `100%` would match anything containing
+    `100` followed by any single character. The query pairs this with
+    `ESCAPE '\\'` so the backslashes are interpreted as escapes.
+    """
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def search(
     conn: sqlite3.Connection,
     sender: str,
@@ -289,8 +300,8 @@ def search(
         where.append("recipient = ?")
         params.append(recipient)
     if subject:
-        where.append("subject LIKE ?")
-        params.append(f"%{subject}%")
+        where.append("subject LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(subject)}%")
     cap = max(1, min(limit, 100))
     sql = (
         "SELECT id, timestamp, sender, recipient, priority, status, subject "

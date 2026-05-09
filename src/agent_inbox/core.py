@@ -16,6 +16,12 @@ AGENT_SETTABLE_STATUSES = {"read", "in_progress", "done"}
 RESERVED_STATUSES = {"approved", "rejected"}
 BROADCAST = "all"
 
+# Bounds on user-supplied strings. Subjects are short by convention; bodies
+# are markdown-flavored prose, so 1 MB is generous but still bounded so a
+# pathological agent can't fill the disk by sending huge messages.
+MAX_SUBJECT_LEN = 500
+MAX_BODY_LEN = 1_000_000
+
 WAIT_POLL_INTERVAL = 1.0
 WAIT_MAX_SECONDS = 300
 WAIT_DEFAULT_SECONDS = 30
@@ -47,6 +53,17 @@ def _validate_priority(priority: str) -> str:
             f"Must be one of: {', '.join(sorted(VALID_PRIORITIES))}"
         )
     return p
+
+
+def _validate_lengths(subject: str, body: str) -> None:
+    if len(subject) > MAX_SUBJECT_LEN:
+        raise ValueError(
+            f"Subject too long: {len(subject)} chars (max {MAX_SUBJECT_LEN})."
+        )
+    if len(body) > MAX_BODY_LEN:
+        raise ValueError(
+            f"Body too long: {len(body)} chars (max {MAX_BODY_LEN})."
+        )
 
 
 def list_agents() -> dict[str, Any]:
@@ -99,6 +116,7 @@ def send(
     s = _validate_agent(sender, "sender")
     r = _validate_agent(recipient, "recipient", allow_broadcast=True)
     p = _validate_priority(priority)
+    _validate_lengths(subject, body)
 
     if r == BROADCAST:
         targets = sorted(_agents() - {s})
@@ -269,6 +287,7 @@ def reply(
     """
     s = _validate_agent(sender, "sender")
     p = _validate_priority(priority)
+    _validate_lengths("", body)  # subject inherited from parent, just check body
     with db.connect() as conn:
         parent = db.get_message(conn, in_reply_to)
         if not parent:
