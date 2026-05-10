@@ -70,22 +70,34 @@ wails build -platform linux/amd64
 Built binaries land in `build/bin/`.
 
 If you don't have the system webview deps but want to validate the code
-compiles cleanly:
+compiles cleanly, run the steps in this order — the Go side cannot be
+built or tested in isolation because `main.go` uses
+`//go:embed all:frontend/dist`, so the dist directory must exist before
+any `go build` or `go test` invocation:
 
 ```bash
-go build ./...                 # Go side compiles standalone
-cd frontend && npm install
+# 1. Build the frontend first — produces dist/, which Go embeds
+cd frontend
+npm ci
 npm run check                  # svelte-check / tsc
 npm run build                  # vite production bundle
+
+# 2. Then the Go side, from ui/
+cd ..
+go build ./...
+go test ./...
 ```
 
-> **Heads up — `go test` requires the embedded frontend bundle.** The
-> `//go:embed all:frontend/dist` directive in `main.go` resolves at
-> compile time, so a clean checkout has nothing to embed until you've
-> built the frontend at least once. Run `cd frontend && npm install &&
-> npm run build` once before `go test ./...`, or use `wails build`
-> which handles both. Subsequent `go test` runs are fast as long as
-> `frontend/dist/` exists.
+> **Why the order matters.** `//go:embed all:frontend/dist` resolves at
+> Go compile time, not at runtime. On a clean checkout there's nothing
+> to embed, so `go build` and `go test` both fail with
+> `invalid go:embed: build system did not supply embed configuration`
+> until the frontend has been built once. `wails build` and `wails dev`
+> handle the ordering for you; the standalone commands above don't.
+
+If you only want to lint the Go side without compiling — `golangci-lint`
+also type-checks, so the same prereq applies. Build the frontend first,
+then run `golangci-lint run`.
 
 ## Configuration
 

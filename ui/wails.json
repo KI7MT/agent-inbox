@@ -12,7 +12,7 @@
   },
   "info": {
     "productName": "Agent Inbox",
-    "productVersion": "0.3.0",
+    "productVersion": "0.4.2",
     "copyright": "MIT",
     "comments": "Local message inbox for coordinating AI coding agents."
   }
