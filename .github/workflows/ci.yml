@@ -45,6 +45,22 @@ jobs:
       - name: Run ruff
         run: uv run ruff check src tests
 
+      # Frontend dist must exist before any Go tooling because main.go
+      # uses //go:embed all:frontend/dist — golangci-lint type-checks
+      # the source and fails without it. Same prereq as go test.
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ui/frontend/package-lock.json
+
+      - name: Build frontend (produces dist/ for go:embed)
+        working-directory: ui/frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Set up Go 1.23
         uses: actions/setup-go@v6
         with:
