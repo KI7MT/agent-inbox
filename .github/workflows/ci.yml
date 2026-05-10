@@ -41,6 +41,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: lint
 
       - name: Install Python 3.12
         run: uv python install 3.12
@@ -75,7 +76,7 @@ jobs:
           cache-dependency-path: ui/go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           working-directory: ui
@@ -117,6 +118,10 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          # Differentiate cache key per matrix cell so parallel jobs
+          # don't race on the same key (warnings about "cache may already
+          # be reserved" otherwise). cache-suffix appends to the auto-key.
+          cache-suffix: ${{ matrix.os }}-py${{ matrix.python }}
 
       - name: Install Python ${{ matrix.python }}
         run: uv python install ${{ matrix.python }}
