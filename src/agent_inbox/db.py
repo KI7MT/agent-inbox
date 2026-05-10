@@ -28,10 +28,11 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Iterator, TypeVar
+from typing import Any, TypeVar
 
 from platformdirs import user_data_dir
 
@@ -225,10 +226,11 @@ def insert_message(
 ) -> tuple[str, str]:
     """Insert a message and return (id, status)."""
     msg_id = str(uuid.uuid4())
-    if auto_approve() and priority in {"action", "urgent"}:
-        status = "approved"
-    else:
-        status = "unread"
+    status = (
+        "approved"
+        if auto_approve() and priority in {"action", "urgent"}
+        else "unread"
+    )
     conn.execute(
         "INSERT INTO messages "
         "(id, sender, recipient, priority, subject, body, status, parent_id) "
