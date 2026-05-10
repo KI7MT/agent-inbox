@@ -1,6 +1,6 @@
 [project]
 name = "agent-inbox-mcp"
-version = "0.3.8"
+version = "0.3.9"
 description = "MCP server for a multi-agent message inbox — SQLite-backed, brief-driven, vendor-neutral"
 readme = "README.md"
 license = {text = "MIT"}
@@ -36,6 +36,7 @@ agent-inbox = "agent_inbox.cli:main"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "ruff>=0.6",
 ]
 
 [build-system]
@@ -48,3 +49,18 @@ packages = ["src/agent_inbox"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["ui/frontend/node_modules", "ui/frontend/dist", "ui/frontend/wailsjs"]
+
+[tool.ruff.lint]
+# Default rules (E, F) plus a small curated set:
+#   I  — import sorting
+#   B  — flake8-bugbear (likely bugs)
+#   UP — pyupgrade (modern syntax)
+#   SIM — flake8-simplify (clearer constructs)
+select = ["E", "F", "I", "B", "UP", "SIM"]
+# E501 (line too long) — handled by line-length above; allow occasional overflow in docstrings
+ignore = ["E501"]

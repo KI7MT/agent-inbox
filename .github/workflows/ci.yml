@@ -22,6 +22,59 @@ env:
 
 jobs:
   # -------------------------------------------------------------------
+  # Lint — Python (ruff) + Go (golangci-lint). Runs in parallel with
+  # the test matrix; cheap, ubuntu-only.
+  # -------------------------------------------------------------------
+  lint:
+    name: lint (ruff + golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Sync Python dependencies (frozen)
+        run: uv sync --frozen --extra dev
+
+      - name: Run ruff
+        run: uv run ruff check src tests
+
+      # Frontend dist must exist before any Go tooling because main.go
+      # uses //go:embed all:frontend/dist — golangci-lint type-checks
+      # the source and fails without it. Same prereq as go test.
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ui/frontend/package-lock.json
+
+      - name: Build frontend (produces dist/ for go:embed)
+        working-directory: ui/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: ui/go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          working-directory: ui
+
+  # -------------------------------------------------------------------
   # Python suite — full multi-version coverage on Linux (cheapest
   # runner) plus single-Python smoke on macOS and Windows for cross-OS
   # parity. The combo keeps total runner minutes reasonable while
@@ -118,16 +171,18 @@ jobs:
   ci-all-green:
     name: ci-all-green
     runs-on: ubuntu-latest
-    needs: [python, go-and-frontend]
+    needs: [lint, python, go-and-frontend]
     if: always()
     steps:
       - name: Verify all matrix cells passed
         run: |
-          if [ "${{ needs.python.result }}" != "success" ] || \
+          if [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.python.result }}" != "success" ] || \
              [ "${{ needs.go-and-frontend.result }}" != "success" ]; then
-            echo "One or more matrix cells failed:"
+            echo "One or more jobs failed:"
+            echo "  lint: ${{ needs.lint.result }}"
             echo "  python: ${{ needs.python.result }}"
             echo "  go-and-frontend: ${{ needs.go-and-frontend.result }}"
             exit 1
           fi
-          echo "All matrix cells passed."
+          echo "All jobs passed."

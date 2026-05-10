@@ -1,0 +1,33 @@
+# Minimal config — golangci-lint v2 default linter set covers the
+# essentials (errcheck, govet, ineffassign, staticcheck, unused) and
+# stays opinionated about what's worth fixing without turning the
+# linter into a style police.
+#
+# https://golangci-lint.run/usage/configuration/
+
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  default: standard
+  enable:
+    - misspell    # catch typos in comments and strings
+    - unconvert   # flag redundant type conversions
+    - gocritic    # broad style + perf hints (default checks only)
+
+  settings:
+    gocritic:
+      disabled-checks:
+        # ifElseChain pushes for switch statements that often read worse
+        # than the original chain in this codebase.
+        - ifElseChain
+
+    errcheck:
+      # `defer rows.Close()` is the idiomatic Go pattern even though Close
+      # technically returns an error. The actionable cases (write errors
+      # from a connection close) are checked elsewhere; double-Close on a
+      # finished result set is a no-op.
+      exclude-functions:
+        - (*database/sql.Rows).Close

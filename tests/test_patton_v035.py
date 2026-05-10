@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import os
 import unicodedata
-import unittest.mock
 from pathlib import Path
 
 import pytest
@@ -499,7 +498,6 @@ def test_broadcast_calls_agents_once_per_target(setup, monkeypatch) -> None:
     3 + N total disk reads of the briefs dir per send. Pinned so a
     future refactor can't accidentally explode this to N**2 without
     flagging."""
-    full = {"alice", "bob", "carol", "dave", "eve"}
     call_count = {"n": 0}
     real_agents = core._agents
 
