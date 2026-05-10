@@ -228,7 +228,7 @@ jobs:
           file build/bin/agent-inbox.app/Contents/MacOS/agent-inbox-ui
 
       - name: Upload .app artifact (for manual inspection on demand)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: agent-inbox-darwin-universal-${{ github.sha }}
           path: ui/build/bin/agent-inbox.app
