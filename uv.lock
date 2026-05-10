@@ -4,7 +4,7 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "agent-inbox-mcp"
-version = "0.3.9"
+version = "0.3.10"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
