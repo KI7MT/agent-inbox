@@ -51,7 +51,7 @@ agent-inbox/
 │   ├── store.go                SQLite layer mirroring db.py
 │   ├── app.go                  Bound methods exposed to Svelte
 │   └── frontend/               Vite + Svelte components
-├── examples/briefs/          Reference 6-agent set (operator + 5 roles)
+├── examples/briefs/          Reference 7-role bundle (operator + 6 collaborators)
 ├── bin/                      Cross-platform launcher scripts (POSIX + Windows)
 ├── tests/                    159 Python + 7 Go tests, 4-round audit history
 └── pyproject.toml
@@ -336,10 +336,6 @@ for the pipeline shape and a quick-start copy command.
 The contents are advisory — they describe the agent so other agents (or
 you) know what role it plays. Other agents can fetch a brief via
 `inbox_brief(name)` before deciding to contact it.
-
-`examples/briefs/` ships a reference six-agent set covering a typical
-engineering workflow: `operator`, `architect`, `implementer`, `reviewer`,
-`tester`, `ops`.
 
 ## Polling — how agents stay reactive without prompting
 
