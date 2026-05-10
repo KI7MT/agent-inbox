@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -47,10 +48,12 @@ CREATE TABLE IF NOT EXISTS messages (
     parent_id TEXT
 );
 
+-- These indexes only reference columns from the original schema. Indexes
+-- on parent_id and created_unix live in migrate() instead because those
+-- columns are added by ALTER TABLE — running CREATE INDEX on a missing
+-- column would fail before the migration could add it.
 CREATE INDEX IF NOT EXISTS idx_recipient_status ON messages(recipient, status);
 CREATE INDEX IF NOT EXISTS idx_timestamp ON messages(timestamp);
-CREATE INDEX IF NOT EXISTS idx_created_unix ON messages(created_unix);
-CREATE INDEX IF NOT EXISTS idx_parent_id ON messages(parent_id);
 `
 
 // store wraps a *sql.DB plus a once-per-process schema-init guard.
@@ -118,16 +121,133 @@ func (s *store) ensureWAL() error {
 	return err
 }
 
-// ensureSchema runs CREATE TABLE IF NOT EXISTS once per process. The
-// Python side handles ALTER-TABLE migrations; we only make sure the base
-// schema exists in case the UI is the first thing to touch the file.
+// ensureSchema runs CREATE TABLE IF NOT EXISTS once per process, then
+// applies the same additive migrations the Python side runs. Both halves
+// of the project (Python MCP server, Go UI) need to handle a legacy DB
+// independently — neither can assume the other ran first.
 func (s *store) ensureSchema() error {
 	s.initOnce.Do(func() {
 		if _, err := s.db.Exec(schemaSQL); err != nil {
 			s.initErr = fmt.Errorf("init schema: %w", err)
+			return
+		}
+		if err := s.migrate(); err != nil {
+			s.initErr = fmt.Errorf("migrate schema: %w", err)
 		}
 	})
 	return s.initErr
+}
+
+// migrate applies idempotent additive ALTER TABLE migrations. Mirrors
+// src/agent_inbox/db.py:_migrate. The whole sequence runs on a single
+// pooled connection (the pool size is 1) so BEGIN IMMEDIATE / COMMIT
+// pair correctly without racing the connection pool against itself.
+//
+// Wrapped in withRetry because BEGIN IMMEDIATE can hit SQLITE_BUSY when
+// another process is mid-migration; busy_timeout helps but isn't always
+// enough.
+func (s *store) migrate() error {
+	_, err := withRetry(func() (struct{}, error) {
+		ctx := context.Background()
+		conn, err := s.db.Conn(ctx)
+		if err != nil {
+			return struct{}{}, fmt.Errorf("get conn: %w", err)
+		}
+		defer conn.Close()
+
+		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+			return struct{}{}, fmt.Errorf("begin immediate: %w", err)
+		}
+		rollback := func() { _, _ = conn.ExecContext(ctx, "ROLLBACK") }
+
+		cols, err := connTableColumns(ctx, conn, "messages")
+		if err != nil {
+			rollback()
+			return struct{}{}, err
+		}
+
+		if _, present := cols["parent_id"]; !present {
+			if _, err := conn.ExecContext(ctx, "ALTER TABLE messages ADD COLUMN parent_id TEXT"); err != nil {
+				rollback()
+				return struct{}{}, fmt.Errorf("add parent_id: %w", err)
+			}
+		}
+		if _, present := cols["created_unix"]; !present {
+			if _, err := conn.ExecContext(ctx, "ALTER TABLE messages ADD COLUMN created_unix INTEGER"); err != nil {
+				rollback()
+				return struct{}{}, fmt.Errorf("add created_unix: %w", err)
+			}
+			if _, err := conn.ExecContext(ctx,
+				"UPDATE messages SET created_unix = "+
+					"CAST(strftime('%s', timestamp) AS INTEGER) WHERE created_unix IS NULL",
+			); err != nil {
+				rollback()
+				return struct{}{}, fmt.Errorf("backfill created_unix: %w", err)
+			}
+		}
+		if _, err := conn.ExecContext(ctx,
+			"CREATE INDEX IF NOT EXISTS idx_created_unix ON messages(created_unix)",
+		); err != nil {
+			rollback()
+			return struct{}{}, fmt.Errorf("create idx_created_unix: %w", err)
+		}
+		if _, err := conn.ExecContext(ctx,
+			"CREATE INDEX IF NOT EXISTS idx_parent_id ON messages(parent_id)",
+		); err != nil {
+			rollback()
+			return struct{}{}, fmt.Errorf("create idx_parent_id: %w", err)
+		}
+		if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+			rollback()
+			return struct{}{}, fmt.Errorf("commit migration: %w", err)
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+// connTableColumns returns the set of column names on `table` using the
+// caller-provided connection (so it shares the open transaction).
+func connTableColumns(ctx context.Context, conn *sql.Conn, table string) (map[string]struct{}, error) {
+	rows, err := conn.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		out[name] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
+// tableColumns is the standalone-DB version (used by tests against a
+// freshly seeded legacy DB before the store wraps it).
+func tableColumns(db *sql.DB, table string) (map[string]struct{}, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		out[name] = struct{}{}
+	}
+	return out, rows.Err()
 }
 
 func (s *store) close() error {
@@ -446,10 +566,16 @@ func (s *store) stats() (Stats, error) {
 		return st, err
 	}
 
-	// Per-recipient counts of attention-worthy messages.
+	// Per-recipient counts of attention-worthy messages. Predicate must
+	// match listForRecipient — anything different means the sidebar
+	// badge can claim mail that the recipient's actual inbox view
+	// doesn't show (e.g., an unread action/urgent message that's
+	// awaiting operator approval is in operator's pending queue, NOT
+	// in the recipient's own view).
 	r2, err := s.db.Query(`
 		SELECT recipient, count(*) FROM messages
-		WHERE status IN ('unread','approved')
+		WHERE (status = 'unread' AND priority = 'info')
+		   OR status = 'approved'
 		GROUP BY recipient
 	`)
 	if err != nil {

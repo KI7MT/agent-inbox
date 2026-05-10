@@ -31,3 +31,7 @@ linters:
       # finished result set is a no-op.
       exclude-functions:
         - (*database/sql.Rows).Close
+        - (*database/sql.Conn).Close
+        # Test cleanup paths use defer s.close() — close error during
+        # test teardown is informational at best, never actionable.
+        - (*github.com/KI7MT/agent-inbox/ui.store).close
