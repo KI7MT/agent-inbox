@@ -1,6 +1,6 @@
 [project]
 name = "agent-inbox-mcp"
-version = "0.3.11"
+version = "0.4.0"
 description = "MCP server for a multi-agent message inbox — SQLite-backed, brief-driven, vendor-neutral"
 readme = "README.md"
 license = {text = "MIT"}
