@@ -163,6 +163,62 @@ jobs:
         run: go test -v ./...
 
   # -------------------------------------------------------------------
+  # Wails GUI build smoke — proves `wails build -platform darwin/universal`
+  # actually produces a runnable .app bundle on a clean macOS runner.
+  # The closest we can get to a real user's first-time install without
+  # a hands-on-Mac smoke. Slow (~3-5 min) but only runs once per CI.
+  # -------------------------------------------------------------------
+  wails-build:
+    name: wails build (darwin/universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: ui/go.sum
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: ui/frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+
+      - name: Wails doctor (info only — failures don't block)
+        working-directory: ui
+        run: $(go env GOPATH)/bin/wails doctor || true
+
+      - name: Build universal macOS binary
+        working-directory: ui
+        run: $(go env GOPATH)/bin/wails build -platform darwin/universal -clean
+
+      - name: Verify .app bundle was produced
+        # Wails names the .app bundle after wails.json's `name` field
+        # (`agent-inbox`), while the embedded binary is named after the
+        # `outputfilename` field (`agent-inbox-ui`). Both are intentional —
+        # see ui/wails.json.
+        working-directory: ui
+        run: |
+          ls -la build/bin/
+          test -d build/bin/agent-inbox.app || (echo "App bundle missing"; exit 1)
+          test -x build/bin/agent-inbox.app/Contents/MacOS/agent-inbox-ui || (echo "Executable missing"; exit 1)
+          file build/bin/agent-inbox.app/Contents/MacOS/agent-inbox-ui
+
+      - name: Upload .app artifact (for manual inspection on demand)
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-inbox-darwin-universal-${{ github.sha }}
+          path: ui/build/bin/agent-inbox.app
+          retention-days: 14
+
+  # -------------------------------------------------------------------
   # Aggregator — single status check that turns green only when every
   # matrix cell above passes. Stable name for branch protection rules
   # so adding/removing matrix cells later doesn't require updating the
@@ -171,18 +227,20 @@ jobs:
   ci-all-green:
     name: ci-all-green
     runs-on: ubuntu-latest
-    needs: [lint, python, go-and-frontend]
+    needs: [lint, python, go-and-frontend, wails-build]
     if: always()
     steps:
-      - name: Verify all matrix cells passed
+      - name: Verify all jobs passed
         run: |
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.python.result }}" != "success" ] || \
-             [ "${{ needs.go-and-frontend.result }}" != "success" ]; then
+             [ "${{ needs.go-and-frontend.result }}" != "success" ] || \
+             [ "${{ needs.wails-build.result }}" != "success" ]; then
             echo "One or more jobs failed:"
-            echo "  lint: ${{ needs.lint.result }}"
-            echo "  python: ${{ needs.python.result }}"
+            echo "  lint:            ${{ needs.lint.result }}"
+            echo "  python:          ${{ needs.python.result }}"
             echo "  go-and-frontend: ${{ needs.go-and-frontend.result }}"
+            echo "  wails-build:     ${{ needs.wails-build.result }}"
             exit 1
           fi
           echo "All jobs passed."
