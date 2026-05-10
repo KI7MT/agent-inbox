@@ -326,6 +326,13 @@ agent name. Names must match `^[a-z][a-z0-9_-]*$` against the strict end
 of string — trailing whitespace or newlines are rejected. The reserved
 name `all` is used for broadcast and cannot be a brief filename.
 
+[`examples/briefs/`](examples/briefs/) ships a reference seven-role bundle
+covering a typical engineering workflow: `operator`, `architect`,
+`implementer`, `reviewer`, `failure-analyst`, `tester`, `ops`. Each is
+~80–120 lines describing strengths, what the agent avoids, inputs,
+outputs, hand-offs, and when to use it. Read [`examples/README.md`](examples/README.md)
+for the pipeline shape and a quick-start copy command.
+
 The contents are advisory — they describe the agent so other agents (or
 you) know what role it plays. Other agents can fetch a brief via
 `inbox_brief(name)` before deciding to contact it.
