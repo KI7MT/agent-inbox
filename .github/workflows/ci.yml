@@ -11,9 +11,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Opt all JavaScript-based actions to the Node 24 runtime ahead of
-# GitHub's 2026-06-02 default flip. Some actions still embed Node 20
-# internally; this env var is the documented escape hatch.
+# Defensive default: opt any straggler JavaScript actions to the Node 24
+# runtime ahead of GitHub's 2026-06-02 default flip. As of v0.3.11 every
+# pinned action declares Node 24 natively, so this no longer fires for
+# anything in the workflow — left in place to cover future action additions.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   # Force UTF-8 stdio on Windows runners — without this, Python's
@@ -32,9 +33,15 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        # @v7 is the current moving major tag (resolves to v7.6.0 as of
+        # 2026-05-10) which already declares `using: "node24"` natively.
+        # Astral hasn't yet published a moving @v8 tag; v8.0.0 / v8.1.0
+        # exist as point releases but @v8 doesn't resolve. Bump to @v8
+        # once they tag the alias.
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-suffix: lint
 
       - name: Install Python 3.12
         run: uv python install 3.12
@@ -69,7 +76,7 @@ jobs:
           cache-dependency-path: ui/go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
           working-directory: ui
@@ -103,9 +110,18 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        # @v7 is the current moving major tag (resolves to v7.6.0 as of
+        # 2026-05-10) which already declares `using: "node24"` natively.
+        # Astral hasn't yet published a moving @v8 tag; v8.0.0 / v8.1.0
+        # exist as point releases but @v8 doesn't resolve. Bump to @v8
+        # once they tag the alias.
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          # Differentiate cache key per matrix cell so parallel jobs
+          # don't race on the same key (warnings about "cache may already
+          # be reserved" otherwise). cache-suffix appends to the auto-key.
+          cache-suffix: ${{ matrix.os }}-py${{ matrix.python }}
 
       - name: Install Python ${{ matrix.python }}
         run: uv python install ${{ matrix.python }}
