@@ -200,18 +200,22 @@ jobs:
         run: $(go env GOPATH)/bin/wails build -platform darwin/universal -clean
 
       - name: Verify .app bundle was produced
+        # Wails names the .app bundle after wails.json's `name` field
+        # (`agent-inbox`), while the embedded binary is named after the
+        # `outputfilename` field (`agent-inbox-ui`). Both are intentional —
+        # see ui/wails.json.
         working-directory: ui
         run: |
-          test -d build/bin/agent-inbox-ui.app || (echo "App bundle missing"; exit 1)
-          test -x build/bin/agent-inbox-ui.app/Contents/MacOS/agent-inbox-ui || (echo "Executable missing"; exit 1)
-          file build/bin/agent-inbox-ui.app/Contents/MacOS/agent-inbox-ui
           ls -la build/bin/
+          test -d build/bin/agent-inbox.app || (echo "App bundle missing"; exit 1)
+          test -x build/bin/agent-inbox.app/Contents/MacOS/agent-inbox-ui || (echo "Executable missing"; exit 1)
+          file build/bin/agent-inbox.app/Contents/MacOS/agent-inbox-ui
 
       - name: Upload .app artifact (for manual inspection on demand)
         uses: actions/upload-artifact@v4
         with:
-          name: agent-inbox-ui-darwin-universal-${{ github.sha }}
-          path: ui/build/bin/agent-inbox-ui.app
+          name: agent-inbox-darwin-universal-${{ github.sha }}
+          path: ui/build/bin/agent-inbox.app
           retention-days: 14
 
   # -------------------------------------------------------------------
